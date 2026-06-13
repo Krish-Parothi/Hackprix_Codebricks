@@ -10,6 +10,19 @@ load_dotenv()
 
 llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API_KEY"))
 
+def convert_numpy(obj):
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, dict):
+        return {k: convert_numpy(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [convert_numpy(i) for i in obj]
+    return obj
+
 # ── Contradiction Detector ────────────────────────────────────────────────────
 CONTRA_PROMPT = ChatPromptTemplate.from_messages([
     ("system", """You are a conflict analyst. Given market evidence, identify contradictions.
@@ -125,7 +138,7 @@ Given structured evidence, produce a final investment report as JSON:
 }}
 signal_score = weighted average of RSI(0.3) + MACD(0.2) + sentiment(0.3) + fundamentals(0.2), scale 1-10.
 risk_score = from risk_scores.risk_score provided. Do NOT invent numbers."""),
-    ("human", "Full evidence:\n{evidence}\nRisk scores:\n{risk}\nPortfolio fit:\n{portfolio}\nContradictions:\n{contradictions}")
+    ("human", "Full evidence:\n{evidence}\nRisk scores:\n{risk}\nPortfolio fit:\n{portfolio}\nContradictions:\n{contradictions}\nBull Thesis:\n{bull_thesis}\nBear Thesis:\n{bear_thesis}")
 ])
 
 def report_synthesis_node(state: AgentState) -> AgentState:
@@ -135,6 +148,8 @@ def report_synthesis_node(state: AgentState) -> AgentState:
         "risk": json.dumps(state.get("risk_scores", {}), indent=2),
         "portfolio": json.dumps(state.get("portfolio_fit", {}), indent=2),
         "contradictions": json.dumps(state.get("contradictions", {}), indent=2),
+        "bull_thesis": state.get("bull_thesis", "None"),
+        "bear_thesis": state.get("bear_thesis", "None"),
     })
     try:
         report = json.loads(result.content)
@@ -144,3 +159,40 @@ def report_synthesis_node(state: AgentState) -> AgentState:
         report = json.loads(match.group()) if match else {"raw": result.content}
 
     return {"report": report}
+
+
+def risk_quantification_node(state: AgentState) -> AgentState:
+    ticker = state["ticker"]
+    amount = state["amount"]
+    try:
+        df = yf.Ticker(ticker).history(period="1y")["Close"]
+        returns = df.pct_change().dropna()
+
+        var_95 = float(np.percentile(returns, 5)) * amount
+        rf_daily = 0.06 / 252
+        excess = returns - rf_daily
+        sharpe = float((excess.mean() / excess.std()) * np.sqrt(252))
+
+        nifty = yf.Ticker("^NSEI").history(period="1y")["Close"].pct_change().dropna()
+        common = returns.align(nifty, join="inner")
+        cov = np.cov(common[0], common[1])
+        beta = float(cov[0][1] / cov[1][1]) if cov[1][1] != 0 else 1.0
+        volatility = float(returns.std() * np.sqrt(252))
+
+        risk_score = min(10, round(
+            (abs(var_95) / amount * 100) * 0.4 +
+            volatility * 10 * 0.4 +
+            max(0, beta - 1) * 2 * 0.2
+        , 1))
+
+        risk_scores = {
+            "var_95_inr": float(round(var_95, 2)),      # ✅ explicit float()
+            "sharpe_ratio": float(round(sharpe, 3)),    # ✅
+            "beta": float(round(beta, 3)),              # ✅
+            "annual_volatility": float(round(volatility, 4)),  # ✅
+            "risk_score": float(risk_score),            # ✅
+        }
+    except Exception as e:
+        risk_scores = {"error": str(e), "risk_score": 5.0}
+
+    return {"risk_scores": risk_scores}

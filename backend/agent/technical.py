@@ -33,15 +33,15 @@ def technical_agent_node(state: AgentState) -> AgentState:
         trend = "uptrend" if (sma50 and sma200 and sma50 > sma200) else "downtrend"
 
         technical_data = {
-            "rsi": round(rsi, 2) if rsi else None,
+            "rsi": float(round(rsi, 2)) if rsi else None,
             "rsi_signal": rsi_signal,
-            "macd": round(macd, 4) if macd else None,
+            "macd": float(round(macd, 4)) if macd else None,
             "macd_signal": macd_signal_str,
-            "sma50": round(sma50, 2) if sma50 else None,
-            "sma200": round(sma200, 2) if sma200 else None,
+            "sma50": float(round(sma50, 2)) if sma50 else None,
+            "sma200": float(round(sma200, 2)) if sma200 else None,
             "trend": trend,
-            "support": round(support, 2),
-            "resistance": round(resistance, 2),
+            "support": float(round(support, 2)),
+            "resistance": float(round(resistance, 2)),
             "fetched_at": datetime.utcnow().isoformat(),
         }
     except Exception as e:

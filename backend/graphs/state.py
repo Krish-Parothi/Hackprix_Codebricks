@@ -20,6 +20,8 @@ class AgentState(MessagesState):
     contradictions: dict
     risk_scores: dict
     portfolio_fit: dict
+    bull_thesis: str
+    bear_thesis: str
     report: dict
 
     # Control

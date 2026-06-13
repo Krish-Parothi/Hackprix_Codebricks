@@ -7,11 +7,26 @@ from graphs.pipeline import graph
 from memory.mongo import save_analysis, add_to_watchlist
 import json, uuid, asyncio
 from dotenv import load_dotenv
+from contextlib import asynccontextmanager
+from fastapi.responses import Response
+from agent.voice import translate_to_english_sarvam, generate_audio_elevenlabs
 
 load_dotenv()
-app = FastAPI(title="FinAgentX 2.0")
 
-# In-memory thread store (swap for Redis in prod)
+async def autonomous_monitoring():
+    while True:
+        print("[System] Autonomous Monitoring: Checking watchlists and evaluating alerts...")
+        # Here we would query MongoDB for watchlists and run the agent pipeline
+        await asyncio.sleep(3600)  # Runs every hour
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(autonomous_monitoring())
+    yield
+    task.cancel()
+
+app = FastAPI(title="FinAgentX 2.0", lifespan=lifespan)
+
 _threads: dict = {}
 
 class AnalyzeRequest(BaseModel):
@@ -20,7 +35,7 @@ class AnalyzeRequest(BaseModel):
 
 class HITLRequest(BaseModel):
     thread_id: str
-    action: str          # approve | modify | reject
+    action: str
     user_id: str = "default_user"
     modified_allocation: dict | None = None
 
@@ -28,6 +43,12 @@ class WatchlistRequest(BaseModel):
     user_id: str
     ticker: str
     alert_price: float
+
+class VoiceRequest(BaseModel):
+    text: str
+
+class TranslationRequest(BaseModel):
+    text: str
 
 
 @app.get("/health")
@@ -46,10 +67,7 @@ async def analyze(req: AnalyzeRequest):
         "hitl_action": "",
     }
 
-    # Run until HITL interrupt
-    result = await asyncio.to_thread(
-        graph.invoke, state_input, config
-    )
+    result = await graph.ainvoke(state_input, config)  # ✅ direct await
     _threads[thread_id] = {"config": config, "user_id": req.user_id}
 
     return {
@@ -75,11 +93,7 @@ async def approve(req: HITLRequest):
     if req.modified_allocation:
         resume_state["portfolio_fit"] = req.modified_allocation
 
-    result = await asyncio.to_thread(
-        graph.invoke,
-        Command(resume=resume_state),
-        config
-    )
+    result = await graph.ainvoke(Command(resume=resume_state), config)  # ✅ direct await
 
     if req.action == "approve":
         ticker = result.get("ticker", "")
@@ -97,7 +111,6 @@ async def watchlist(req: WatchlistRequest):
 
 @app.get("/analyze/stream")
 async def analyze_stream(message: str, user_id: str = "default_user"):
-    """SSE streaming endpoint"""
     thread_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
     state_input = {
@@ -107,10 +120,22 @@ async def analyze_stream(message: str, user_id: str = "default_user"):
     }
 
     async def event_gen():
-        for event in graph.stream(state_input, config, stream_mode="updates"):
+        async for event in graph.astream(state_input, config, stream_mode="updates"):  # ✅ astream
             node = list(event.keys())[0]
             yield f"data: {json.dumps({'node': node, 'update': event[node]})}\n\n"
             await asyncio.sleep(0)
         yield f"data: {json.dumps({'node': 'done', 'thread_id': thread_id})}\n\n"
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
+
+@app.post("/voice/synthesize")
+async def voice_synthesize(req: VoiceRequest):
+    audio_bytes = await generate_audio_elevenlabs(req.text)
+    if not audio_bytes:
+        raise HTTPException(status_code=500, detail="Audio generation failed")
+    return Response(content=audio_bytes, media_type="audio/mpeg")
+
+@app.post("/translate")
+async def translate_text(req: TranslationRequest):
+    translated = await translate_to_english_sarvam(req.text)
+    return {"translated_text": translated}
