@@ -3,7 +3,6 @@ import { ArrowUpRight, ArrowDownRight, TrendingUp, ShieldAlert } from 'lucide-re
 
 interface DebatePanelProps {
   isActive: boolean;
-  ticker: string;
   revealedPointsCount: number; // 0 to 4
   bullCase: string[];
   bearCase: string[];
@@ -11,7 +10,6 @@ interface DebatePanelProps {
 
 export const DebatePanel: React.FC<DebatePanelProps> = ({
   isActive,
-  ticker,
   revealedPointsCount,
   bullCase,
   bearCase

@@ -1,29 +1,60 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Search, ChevronRight, Activity, Cpu, Shield, Globe } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Search, Activity, Cpu, Shield, Globe } from 'lucide-react';
+import { supabase } from '../utils/supabase';
 
 interface LandingScreenProps {
   onAnalyze: (company: string) => void;
 }
 
+const examples = ['NVDA', 'AAPL', 'MSFT', 'RELIANCE', 'TCS', 'TSLA', 'GOOGL'];
+
 export const LandingScreen: React.FC<LandingScreenProps> = ({ onAnalyze }) => {
   const [searchValue, setSearchValue] = useState('');
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [authStatus, setAuthStatus] = useState('');
+  const [authUserLabel, setAuthUserLabel] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [smsOtp, setSmsOtp] = useState('');
+  const [smsStep, setSmsStep] = useState<'phone' | 'code'>('phone');
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const examples = ['NVDA', 'AAPL', 'MSFT', 'RELIANCE', 'TCS', 'TSLA', 'GOOGL'];
+  const resetAuthFlow = () => {
+    setAuthStatus('');
+    setPhoneNumber('');
+    setSmsOtp('');
+    setSmsStep('phone');
+  };
 
-  // Handle auto-complete suggestions
-  useEffect(() => {
-    if (searchValue.trim().length > 0) {
-      const filtered = examples.filter(ex => 
-        ex.toLowerCase().includes(searchValue.toLowerCase()) && 
-        ex.toLowerCase() !== searchValue.toLowerCase()
-      );
-      setSuggestions(filtered);
-    } else {
-      setSuggestions([]);
-    }
+  const suggestions = useMemo(() => {
+   if (searchValue.trim().length === 0) {
+     return [];
+   }
+
+   return examples.filter(ex =>
+     ex.toLowerCase().includes(searchValue.toLowerCase()) &&
+     ex.toLowerCase() !== searchValue.toLowerCase()
+   );
   }, [searchValue]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (isMounted) {
+        setAuthUserLabel(data.session?.user.email ?? data.session?.user.id ?? null);
+      }
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthUserLabel(session?.user.email ?? session?.user.id ?? null);
+    });
+
+    return () => {
+      isMounted = false;
+      data.subscription.unsubscribe();
+    };
+  }, []);
 
   // Particle background simulation
   useEffect(() => {
@@ -169,6 +200,87 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onAnalyze }) => {
     }
   };
 
+  const handleSignOut = async () => {
+    setAuthLoading(true);
+    setAuthStatus('');
+
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      setAuthStatus(error.message);
+      setAuthLoading(false);
+      return;
+    }
+
+    setAuthUserLabel(null);
+    setIsAuthOpen(false);
+    resetAuthFlow();
+    setAuthStatus('Signed out.');
+    setAuthLoading(false);
+  };
+
+  const handleGoogleAuth = async () => {
+    setAuthLoading(true);
+    setAuthStatus('');
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+        queryParams: {
+          prompt: 'select_account',
+        },
+      },
+    });
+
+    if (error) {
+      setAuthStatus(error.message);
+      setAuthLoading(false);
+    }
+  };
+
+  const handleSendSmsOtp = async () => {
+    setAuthLoading(true);
+    setAuthStatus('');
+
+    const { error } = await supabase.auth.signInWithOtp({
+      phone: phoneNumber.trim(),
+    });
+
+    if (error) {
+      setAuthStatus(error.message);
+      setAuthLoading(false);
+      return;
+    }
+
+    setSmsStep('code');
+    setAuthStatus('Verification code sent by SMS.');
+    setAuthLoading(false);
+  };
+
+  const handleVerifySmsOtp = async () => {
+    setAuthLoading(true);
+    setAuthStatus('');
+
+    const { data, error } = await supabase.auth.verifyOtp({
+      phone: phoneNumber.trim(),
+      token: smsOtp.trim(),
+      type: 'sms',
+    });
+
+    if (error) {
+      setAuthStatus(error.message);
+      setAuthLoading(false);
+      return;
+    }
+
+    setAuthUserLabel(data.user?.phone ?? data.user?.email ?? data.user?.id ?? phoneNumber);
+    setIsAuthOpen(false);
+    resetAuthFlow();
+    setAuthStatus('SMS sign-in successful.');
+    setAuthLoading(false);
+  };
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
       {/* Background Particles */}
@@ -192,14 +304,55 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onAnalyze }) => {
       </div>
 
       {/* Landing Cockpit Info Bar */}
-      <div style={{ position: 'absolute', top: '40px', left: '40px', display: 'flex', gap: '24px', zIndex: 2 }}>
+      <div style={{ position: 'absolute', top: '40px', left: '40px', right: '40px', display: 'flex', justifyContent: 'space-between', gap: '24px', zIndex: 2 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', opacity: 0.7 }}>
           <Activity size={16} color="var(--primary)" />
           <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', letterSpacing: '1px', color: 'var(--text-muted)' }}>SYSTEM: READY</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', opacity: 0.7 }}>
-          <Cpu size={16} color="var(--success)" />
-          <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', letterSpacing: '1px', color: 'var(--text-muted)' }}>AGENTS IN COMMITTEE: 7</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', opacity: 0.7 }}>
+            <Cpu size={16} color="var(--success)" />
+            <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', letterSpacing: '1px', color: 'var(--text-muted)' }}>AGENTS IN COMMITTEE: 7</span>
+          </div>
+          {authUserLabel ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 12px',
+                border: '1px solid rgba(20, 241, 149, 0.2)',
+                borderRadius: '999px',
+                background: 'rgba(20, 241, 149, 0.08)',
+                fontSize: '11px',
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--success)'
+              }}>
+                {authUserLabel}
+              </div>
+              <button
+                type="button"
+                className="btn-cyber"
+                style={{ padding: '8px 16px', fontSize: '11px' }}
+                onClick={handleSignOut}
+                disabled={authLoading}
+              >
+                Sign Out
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="btn-cyber btn-cyber-success"
+              style={{ padding: '8px 16px', fontSize: '11px' }}
+              onClick={() => {
+                resetAuthFlow();
+                setIsAuthOpen(true);
+              }}
+            >
+              Login / Sign Up
+            </button>
+          )}
         </div>
       </div>
 
@@ -316,7 +469,6 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onAnalyze }) => {
                   key={suggestion}
                   onClick={() => {
                     setSearchValue(suggestion);
-                    setSuggestions([]);
                   }}
                   style={{
                     padding: '10px 16px',
@@ -377,6 +529,160 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onAnalyze }) => {
           <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', letterSpacing: '1px' }}>FINPILOT DECISION ENGINES VER 3.5.0</span>
         </div>
       </div>
+
+      {isAuthOpen && (
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 20,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'rgba(5, 8, 22, 0.72)',
+          backdropFilter: 'blur(10px)',
+        }}>
+          <div className="glass-panel-heavy" style={{
+            width: '90%',
+            maxWidth: '420px',
+            padding: '28px',
+            position: 'relative'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+              <div>
+                <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--primary)', letterSpacing: '2px' }}>
+                  SECURE ACCESS
+                </div>
+                <h3 style={{ fontSize: '22px', marginTop: '4px' }}>Sign In</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  resetAuthFlow();
+                  setIsAuthOpen(false);
+                }}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--border-glass)',
+                  color: 'var(--text-muted)',
+                  borderRadius: '8px',
+                  padding: '6px 10px',
+                  cursor: 'pointer'
+                }}
+              >
+                Close
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                resetAuthFlow();
+                handleGoogleAuth();
+              }}
+              className="btn-cyber btn-cyber-success"
+              style={{
+                width: '100%',
+                marginBottom: '14px',
+                padding: '12px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px'
+              }}
+              disabled={authLoading}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.1-1.4 3.3-5.5 3.3A6.4 6.4 0 1 1 12 5.6c1.8 0 3 .8 3.7 1.4l2.6-2.5A10.1 10.1 0 0 0 12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c5.8 0 9.6-4.1 9.6-9.8 0-.7-.1-1.3-.2-1.9H12z"/>
+              </svg              >
+                Continue with Google
+              </button>
+
+              <div style={{ marginBottom: '14px', padding: '14px', border: '1px solid var(--border-glass)', borderRadius: '10px', background: 'rgba(255,255,255,0.02)' }}>
+                <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--primary)', letterSpacing: '2px', marginBottom: '10px' }}>
+                  SMS OTP AUTH
+                </div>
+                {smsStep === 'phone' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <input
+                      type="tel"
+                      placeholder="+15551234567"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      style={{
+                        background: 'rgba(255,255,255,0.02)',
+                        border: '1px solid var(--border-glass)',
+                        borderRadius: '8px',
+                        padding: '12px 14px',
+                        color: '#fff',
+                        outline: 'none'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSendSmsOtp}
+                      className="btn-cyber"
+                      style={{ width: '100%', padding: '12px 16px' }}
+                      disabled={authLoading || !phoneNumber.trim()}
+                    >
+                      Send SMS Code
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="Enter verification code"
+                      value={smsOtp}
+                      onChange={(e) => setSmsOtp(e.target.value)}
+                      style={{
+                        background: 'rgba(255,255,255,0.02)',
+                        border: '1px solid var(--border-glass)',
+                        borderRadius: '8px',
+                        padding: '12px 14px',
+                        color: '#fff',
+                        outline: 'none'
+                      }}
+                    />
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSmsStep('phone');
+                          setSmsOtp('');
+                          setAuthStatus('');
+                        }}
+                        className="btn-cyber"
+                        style={{ flex: 1, padding: '12px 16px' }}
+                        disabled={authLoading}
+                      >
+                        Change Number
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleVerifySmsOtp}
+                        className="btn-cyber btn-cyber-success"
+                        style={{ flex: 1, padding: '12px 16px' }}
+                        disabled={authLoading || !smsOtp.trim()}
+                      >
+                        Verify Code
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '1px', textAlign: 'center' }}>
+                Use Google or mobile SMS OTP to sign in with Supabase.
+              </div>
+              {authStatus && (
+                <div style={{ fontSize: '12px', color: authStatus.toLowerCase().includes('error') ? 'var(--danger)' : 'var(--text-secondary)', marginTop: '12px' }}>
+                  {authStatus}
+                </div>
+              )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

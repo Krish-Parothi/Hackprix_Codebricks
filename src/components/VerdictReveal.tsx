@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ShieldCheck, Download, Users, FileText, CheckCircle, RefreshCw } from 'lucide-react';
+import { ShieldCheck, Download, FileText, RefreshCw } from 'lucide-react';
 
 interface VerdictRevealProps {
   isActive: boolean;
@@ -23,14 +23,17 @@ export const VerdictReveal: React.FC<VerdictRevealProps> = ({
   const [animateProgress, setAnimateProgress] = useState(0);
 
   useEffect(() => {
-    if (isActive) {
-      const timer = setTimeout(() => {
-        setAnimateProgress(confidence);
-      }, 300);
-      return () => clearTimeout(timer);
-    } else {
-      setAnimateProgress(0);
-    }
+    if (!isActive) return;
+
+    const resetTimer = window.setTimeout(() => setAnimateProgress(0), 0);
+    const timer = window.setTimeout(() => {
+      setAnimateProgress(confidence);
+    }, 300);
+
+    return () => {
+      window.clearTimeout(resetTimer);
+      window.clearTimeout(timer);
+    };
   }, [isActive, confidence]);
 
   if (!isActive) return null;

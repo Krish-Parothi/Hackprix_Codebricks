@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Settings, Play, Pause, Bell, Plus, Trash2, ArrowLeft, Terminal, LayoutDashboard } from 'lucide-react';
+import { Shield, Play, Pause, Bell, Plus, Trash2, ArrowLeft, Terminal } from 'lucide-react';
 
 interface WatchlistItem {
   id: string;

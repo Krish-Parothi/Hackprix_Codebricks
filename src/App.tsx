@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { LandingScreen } from './components/LandingScreen';
 import { BoardroomScreen } from './components/BoardroomScreen';
 import { VerdictReveal } from './components/VerdictReveal';
@@ -10,19 +10,13 @@ type ViewType = 'landing' | 'boardroom' | 'monitoring';
 function App() {
   const [view, setView] = useState<ViewType>('landing');
   const [ticker, setTicker] = useState('NVIDIA');
-  
-  // Transition state
-  const [isDoorAnimating, setIsDoorAnimating] = useState(false);
   const [isDoorClosed, setIsDoorClosed] = useState(true);
-
-  // Verdict state
   const [verdictActive, setVerdictActive] = useState(false);
   const [verdict, setVerdict] = useState<'BUY' | 'HOLD' | 'SELL'>('BUY');
   const [confidence, setConfidence] = useState(86);
   const [factors, setFactors] = useState<{ name: string; score: number }[]>([]);
   const [summaryText, setSummaryText] = useState('');
 
-  // Initial load transition: open the doors to reveal landing page
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsDoorClosed(false);
@@ -30,27 +24,19 @@ function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Cinematic view-transition doors animation
   const handleTransitionTo = (nextView: ViewType, selectedTicker?: string) => {
-    setIsDoorAnimating(true);
-    setIsDoorClosed(true); // Close the doors
+    setIsDoorClosed(true);
 
     if (selectedTicker) {
       setTicker(selectedTicker);
     }
 
-    // After doors close (1.2s), switch view behind doors
     setTimeout(() => {
       setView(nextView);
-      setVerdictActive(false); // Reset verdict state
+      setVerdictActive(false);
 
-      // Open the doors again
       setTimeout(() => {
         setIsDoorClosed(false);
-        // End animation status
-        setTimeout(() => {
-          setIsDoorAnimating(false);
-        }, 1200);
       }, 300);
     }, 1200);
   };
@@ -70,8 +56,6 @@ function App() {
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', background: '#050816', overflow: 'hidden' }}>
-      
-      {/* Active screen rendering */}
       {view === 'landing' && (
         <LandingScreen onAnalyze={(tk) => handleTransitionTo('boardroom', tk)} />
       )}
@@ -89,7 +73,6 @@ function App() {
         <MonitoringScreen onBackToBoardroom={() => handleTransitionTo('boardroom')} />
       )}
 
-      {/* Overlapping Verdict Reveal Dialog */}
       <VerdictReveal
         isActive={verdictActive}
         ticker={ticker}
@@ -100,7 +83,6 @@ function App() {
         onRestart={() => handleTransitionTo('landing')}
       />
 
-      {/* Cinematic Boardroom Transition Doors */}
       <div className={`door-container ${!isDoorClosed ? 'door-open' : ''}`}>
         <div className="door-left">
           <div className="door-logo">
@@ -135,7 +117,6 @@ function App() {
         </div>
         <div className="door-right">
           <div className="door-logo" style={{ opacity: 0 }}>
-            {/* Kept symmetric for visual alignment but invisible */}
             <div style={{ width: '80px', height: '80px' }} />
           </div>
         </div>

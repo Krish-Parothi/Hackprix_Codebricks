@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, FastForward, RotateCcw, AlertTriangle, ExternalLink, HelpCircle, ShieldAlert, Cpu, BarChart2, MessageSquare, Shield, Activity } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { Play, Pause, FastForward, RotateCcw, Cpu, BarChart2, Activity } from 'lucide-react';
 
 interface BoardroomScreenProps {
   ticker: string;
@@ -17,6 +17,149 @@ interface Agent {
   angle: number; // For rendering around table
 }
 
+type TickerSnapshot = {
+  price: string;
+  change: string;
+  isPositive: boolean;
+  volume: string;
+  peRatio: string;
+  rsi: string;
+  macd: string;
+  ema: string;
+  volatility: string;
+  riskScore: string;
+  drawdown: string;
+  newsFeed: string[];
+};
+
+function getTickerSnapshot(ticker: string): TickerSnapshot {
+  if (ticker === 'NVDA') {
+    return {
+      price: '$124.85',
+      change: '+4.8%',
+      isPositive: true,
+      volume: '65.2M',
+      peRatio: '68.4',
+      rsi: '58.2',
+      macd: 'BUY SIGN',
+      ema: 'Bullish',
+      volatility: 'Low',
+      riskScore: '18%',
+      drawdown: '-4.2%',
+      newsFeed: [
+        'AI-driven assessment for NVDA signals solid operational efficiency.',
+        'Macro conditions for NVDA sector remain favorable, analyst says.',
+        'Volume indicators reveal minor block accumulation at current pivot.'
+      ]
+    };
+  }
+
+  if (ticker === 'AAPL') {
+    return {
+      price: '$178.20',
+      change: '-0.8%',
+      isPositive: false,
+      volume: '48.9M',
+      peRatio: '28.1',
+      rsi: '58.2',
+      macd: 'BUY SIGN',
+      ema: 'Bullish',
+      volatility: 'Low',
+      riskScore: '18%',
+      drawdown: '-4.2%',
+      newsFeed: [
+        'AI-driven assessment for AAPL signals solid operational efficiency.',
+        'Macro conditions for AAPL sector remain favorable, analyst says.',
+        'Volume indicators reveal minor block accumulation at current pivot.'
+      ]
+    };
+  }
+
+  if (ticker === 'MSFT') {
+    return {
+      price: '$415.50',
+      change: '+1.2%',
+      isPositive: true,
+      volume: '22.3M',
+      peRatio: '35.6',
+      rsi: '58.2',
+      macd: 'BUY SIGN',
+      ema: 'Bullish',
+      volatility: 'Low',
+      riskScore: '18%',
+      drawdown: '-4.2%',
+      newsFeed: [
+        'AI-driven assessment for MSFT signals solid operational efficiency.',
+        'Macro conditions for MSFT sector remain favorable, analyst says.',
+        'Volume indicators reveal minor block accumulation at current pivot.'
+      ]
+    };
+  }
+
+  if (ticker === 'RELIANCE') {
+    return {
+      price: '₹2,910.40',
+      change: '+0.5%',
+      isPositive: true,
+      volume: '8.4M',
+      peRatio: '26.8',
+      rsi: '58.2',
+      macd: 'BUY SIGN',
+      ema: 'Bullish',
+      volatility: 'Low',
+      riskScore: '18%',
+      drawdown: '-4.2%',
+      newsFeed: [
+        'AI-driven assessment for RELIANCE signals solid operational efficiency.',
+        'Macro conditions for RELIANCE sector remain favorable, analyst says.',
+        'Volume indicators reveal minor block accumulation at current pivot.'
+      ]
+    };
+  }
+
+  if (ticker === 'TCS') {
+    return {
+      price: '₹3,820.00',
+      change: '-1.2%',
+      isPositive: false,
+      volume: '2.1M',
+      peRatio: '29.3',
+      rsi: '58.2',
+      macd: 'BUY SIGN',
+      ema: 'Bullish',
+      volatility: 'Low',
+      riskScore: '18%',
+      drawdown: '-4.2%',
+      newsFeed: [
+        'AI-driven assessment for TCS signals solid operational efficiency.',
+        'Macro conditions for TCS sector remain favorable, analyst says.',
+        'Volume indicators reveal minor block accumulation at current pivot.'
+      ]
+    };
+  }
+
+  const randomChange = `${Math.random() > 0.4 ? '+' : '-'}${(Math.random() * 4).toFixed(1)}%`;
+
+  return {
+    price: `$${(Math.random() * 200 + 50).toFixed(2)}`,
+    change: randomChange,
+    isPositive: randomChange.startsWith('+'),
+    volume: `${(Math.random() * 30 + 10).toFixed(1)}M`,
+    peRatio: (Math.random() * 40 + 15).toFixed(1),
+    rsi: '58.2',
+    macd: 'BUY SIGN',
+    ema: 'Bullish',
+    volatility: 'Low',
+    riskScore: '18%',
+    drawdown: '-4.2%',
+    newsFeed: [
+      `AI-driven assessment for ${ticker} signals solid operational efficiency.`,
+      `Macro conditions for ${ticker} sector remain favorable, analyst says.`,
+      'Volume indicators reveal minor block accumulation at current pivot.'
+    ]
+  };
+}
+
 export const BoardroomScreen: React.FC<BoardroomScreenProps> = ({
   ticker,
   onVerdictReached,
@@ -27,10 +170,11 @@ export const BoardroomScreen: React.FC<BoardroomScreenProps> = ({
   const [phaseIndex, setPhaseIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const [speakerId, setSpeakerId] = useState<string | null>(null);
-  const [dialogueText, setDialogueText] = useState('');
   const [displayedText, setDisplayedText] = useState('');
   const [deliberationProgress, setDeliberationProgress] = useState(0);
   const typewriterTimer = useRef<number | null>(null);
+
+  const snapshot = useMemo(() => getTickerSnapshot(ticker), [ticker]);
 
   // Evidence Wall Data (live updates)
   const [evidenceData, setEvidenceData] = useState({
@@ -55,62 +199,21 @@ export const BoardroomScreen: React.FC<BoardroomScreenProps> = ({
 
   // Setup mock details based on selected ticker
   useEffect(() => {
-    let mockPrice = '$124.85';
-    let mockChange = '+2.4%';
-    let mockVolume = '42.1M';
-    let mockPE = '32.4';
-    let isPos = true;
+    const timer = window.setTimeout(() => {
+      setEvidenceData(prev => ({
+        ...prev,
+        price: snapshot.price,
+        change: snapshot.change,
+        isPositive: snapshot.isPositive,
+        peRatio: snapshot.peRatio,
+        volume: snapshot.volume
+      }));
 
-    if (ticker === 'NVDA') {
-      mockPrice = '$124.85';
-      mockChange = '+4.8%';
-      mockVolume = '65.2M';
-      mockPE = '68.4';
-    } else if (ticker === 'AAPL') {
-      mockPrice = '$178.20';
-      mockChange = '-0.8%';
-      mockVolume = '48.9M';
-      mockPE = '28.1';
-      isPos = false;
-    } else if (ticker === 'MSFT') {
-      mockPrice = '$415.50';
-      mockChange = '+1.2%';
-      mockVolume = '22.3M';
-      mockPE = '35.6';
-    } else if (ticker === 'RELIANCE') {
-      mockPrice = '₹2,910.40';
-      mockChange = '+0.5%';
-      mockVolume = '8.4M';
-      mockPE = '26.8';
-    } else if (ticker === 'TCS') {
-      mockPrice = '₹3,820.00';
-      mockChange = '-1.2%';
-      mockVolume = '2.1M';
-      mockPE = '29.3';
-      isPos = false;
-    } else {
-      mockPrice = `$${(Math.random() * 200 + 50).toFixed(2)}`;
-      mockChange = `${Math.random() > 0.4 ? '+' : '-'}${(Math.random() * 4).toFixed(1)}%`;
-      mockVolume = `${(Math.random() * 30 + 10).toFixed(1)}M`;
-      mockPE = (Math.random() * 40 + 15).toFixed(1);
-      isPos = mockChange.startsWith('+');
-    }
+      setNewsFeed(snapshot.newsFeed);
+    }, 0);
 
-    setEvidenceData(prev => ({
-      ...prev,
-      price: mockPrice,
-      change: mockChange,
-      isPositive: isPos,
-      peRatio: mockPE,
-      volume: mockVolume
-    }));
-
-    setNewsFeed([
-      `AI-driven assessment for ${ticker} signals solid operational efficiency.`,
-      `Macro conditions for ${ticker} sector remain favorable, analyst says.`,
-      `Volume indicators reveal minor block accumulation at current pivot.`
-    ]);
-  }, [ticker]);
+    return () => window.clearTimeout(timer);
+  }, [ticker, snapshot]);
 
   // Agents specification (7 agents seated at coordinates)
   const agents: Agent[] = [
@@ -124,7 +227,7 @@ export const BoardroomScreen: React.FC<BoardroomScreenProps> = ({
   ];
 
   // Simulation dialogue phases
-  const phases = [
+  const phases = useMemo(() => [
     {
       speakerId: 'chair',
       text: `Welcome, Committee. We are now open for Session #AI-2026-001. Today's subject is ${ticker}. Let's initialize data streaming and review analyst reports.`,
@@ -132,7 +235,7 @@ export const BoardroomScreen: React.FC<BoardroomScreenProps> = ({
     },
     {
       speakerId: 'market',
-      text: `Technical trends for ${ticker}: Current price is ${evidenceData.price} (${evidenceData.change}). RSI is ${evidenceData.rsi}. Moving averages indicate strong medium-term support. Momentum signals buy correlation.`,
+      text: `Technical trends for ${ticker}: Current price is ${snapshot.price} (${snapshot.change}). RSI is ${snapshot.rsi}. Moving averages indicate strong medium-term support. Momentum signals buy correlation.`,
       statusUpdates: { chair: 'Listening', market: 'Speaking', news: 'Scanning', sentiment: 'Active', risk: 'Calculating', bull: 'Ready', bear: 'Ready' },
       dataUpdates: { rsi: '64.2', ema: 'Strong Bullish', macd: 'STRONG BUY' }
     },
@@ -154,7 +257,7 @@ export const BoardroomScreen: React.FC<BoardroomScreenProps> = ({
     },
     {
       speakerId: 'risk',
-      text: `Risk Assessment checks out. Current portfolio drawdown limits are at ${evidenceData.drawdown}. Volatility is classified as ${evidenceData.volatility}. Portfolio correlation is clean, low exposure risks here.`,
+      text: `Risk Assessment checks out. Current portfolio drawdown limits are at ${snapshot.drawdown}. Volatility is classified as ${snapshot.volatility}. Portfolio correlation is clean, low exposure risks here.`,
       statusUpdates: { chair: 'Listening', market: 'Ready', news: 'Ready', sentiment: 'Ready', risk: 'Speaking', bull: 'Standing by', bear: 'Standing by' }
     },
     {
@@ -172,7 +275,7 @@ export const BoardroomScreen: React.FC<BoardroomScreenProps> = ({
       text: `Acknowledged. I will now synthesize these reports and opinions. Commencing consensus aggregation... Chairperson core active.`,
       statusUpdates: { chair: 'Synthesizing opinions...', market: 'Standby', news: 'Standby', sentiment: 'Standby', risk: 'Standby', bull: 'Standby', bear: 'Standby' }
     }
-  ];
+  ], [ticker, snapshot]);
 
   // Typewriter effect handler
   useEffect(() => {
@@ -183,9 +286,10 @@ export const BoardroomScreen: React.FC<BoardroomScreenProps> = ({
     const currentPhase = phases[phaseIndex];
     if (!currentPhase) return;
 
-    setSpeakerId(currentPhase.speakerId);
-    setDialogueText(currentPhase.text);
-    setDisplayedText('');
+    const syncTimer = window.setTimeout(() => {
+      setSpeakerId(currentPhase.speakerId);
+      setDisplayedText('');
+    }, 0);
 
     let charIdx = 0;
     typewriterTimer.current = window.setInterval(() => {
@@ -208,52 +312,14 @@ export const BoardroomScreen: React.FC<BoardroomScreenProps> = ({
     }
 
     return () => {
+      window.clearTimeout(syncTimer);
       if (typewriterTimer.current) {
         clearInterval(typewriterTimer.current);
       }
     };
-  }, [phaseIndex, ticker]);
+  }, [phaseIndex, ticker, phases]);
 
-  // Main simulator scheduler
-  useEffect(() => {
-    if (!isPlaying) return;
-
-    const currentTextLength = phases[phaseIndex]?.text.length || 100;
-    const readDelay = currentTextLength * 15 + 2200; // Type duration + reading pause
-
-    const timer = setTimeout(() => {
-      if (phaseIndex < phases.length - 1) {
-        setPhaseIndex(prev => prev + 1);
-      } else {
-        // End of phases: Start Synthesis and Reveal Verdict
-        setIsPlaying(false);
-        triggerDeliberationSynthesis();
-      }
-    }, readDelay);
-
-    return () => clearTimeout(timer);
-  }, [isPlaying, phaseIndex]);
-
-  // Triggering the dimming lights and synthesizing progress ring
-  const triggerDeliberationSynthesis = () => {
-    setSpeakerId('chair');
-    setPhaseIndex(phases.length - 1); // Ensure final synthesize text is shown
-    setDeliberationProgress(1); // Set to active
-
-    // Pulsing progress ring
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 5;
-      if (progress >= 100) {
-        clearInterval(interval);
-        setTimeout(() => {
-          revealFinalVerdict();
-        }, 1000);
-      }
-    }, 120);
-  };
-
-  const revealFinalVerdict = () => {
+  const revealFinalVerdict = useCallback(() => {
     // Generate logical verdict parameters based on the company
     let recommendation: 'BUY' | 'HOLD' | 'SELL' = 'BUY';
     let confidence = 86;
@@ -288,7 +354,45 @@ export const BoardroomScreen: React.FC<BoardroomScreenProps> = ({
     }
 
     onVerdictReached(recommendation, confidence, factors, summary);
-  };
+  }, [onVerdictReached, ticker]);
+
+  const triggerDeliberationSynthesis = useCallback(() => {
+    setSpeakerId('chair');
+    setPhaseIndex(phases.length - 1); // Ensure final synthesize text is shown
+    setDeliberationProgress(1); // Set to active
+
+    // Pulsing progress ring
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += 5;
+      if (progress >= 100) {
+        clearInterval(interval);
+        setTimeout(() => {
+          revealFinalVerdict();
+        }, 1000);
+      }
+    }, 120);
+  }, [phases.length, revealFinalVerdict]);
+
+  // Main simulator scheduler
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    const currentTextLength = phases[phaseIndex]?.text.length || 100;
+    const readDelay = currentTextLength * 15 + 2200; // Type duration + reading pause
+
+    const timer = setTimeout(() => {
+      if (phaseIndex < phases.length - 1) {
+        setPhaseIndex(prev => prev + 1);
+      } else {
+        // End of phases: Start Synthesis and Reveal Verdict
+        setIsPlaying(false);
+        triggerDeliberationSynthesis();
+      }
+    }, readDelay);
+
+    return () => clearTimeout(timer);
+  }, [isPlaying, phaseIndex, phases, triggerDeliberationSynthesis]);
 
   const currentPhase = phases[phaseIndex];
   const activeAgentStatuses = currentPhase ? currentPhase.statusUpdates : {};
@@ -563,7 +667,7 @@ export const BoardroomScreen: React.FC<BoardroomScreenProps> = ({
 
             {/* SVG Data lines pulsing to center */}
             <svg className="data-stream-svg" viewBox="0 0 580 480">
-              {agents.map((agent, index) => {
+              {agents.map((agent) => {
                 // Compute seat coordinates
                 const angle = (agent.angle * Math.PI) / 180 - Math.PI / 2;
                 const x = 290 + 200 * Math.cos(angle);
