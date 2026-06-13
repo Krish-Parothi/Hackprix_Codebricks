@@ -4,7 +4,7 @@ from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from graphs.state import AgentState
 
-llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API_KEY"))
+llm = ChatGroq(model="openai/gpt-oss-120b", api_key=os.getenv("GROQ_API_KEY"))
 
 BULL_PROMPT = ChatPromptTemplate.from_messages([
     ("system", """You are a highly optimistic Venture Capitalist and Bull Investor.

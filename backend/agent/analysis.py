@@ -8,7 +8,7 @@ import json, os
 from dotenv import load_dotenv
 load_dotenv()
 
-llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API_KEY"))
+llm = ChatGroq(model="openai/gpt-oss-120b", api_key=os.getenv("GROQ_API_KEY"))
 
 def convert_numpy(obj):
     if isinstance(obj, np.floating):
@@ -95,6 +95,7 @@ async def portfolio_fit_node(state: AgentState) -> AgentState:
     profile = await get_user_profile("default_user")
     holdings = profile.get("holdings", [])
     goals = profile.get("goals", "growth")
+    amount = state["amount"] 
 
     horizon_years = int("".join(filter(str.isdigit, state["horizon"] or "5")) or 5)
     risk_profile = state["risk_profile"]
@@ -114,8 +115,8 @@ async def portfolio_fit_node(state: AgentState) -> AgentState:
         "existing_holdings": holdings,
         "user_goals": goals,
         "horizon_fit": horizon_fit,
-        "suggested_allocation_inr": round(state["amount"] * allocation_pct, 2),
-        "suggested_remaining_inr": round(state["amount"] * (1 - allocation_pct), 2),
+        "suggested_allocation_pct": f"{round(allocation_pct * 100, 1)}%",
+        "suggested_allocation_inr": round(amount * allocation_pct, 2),
         "allocation_pct": allocation_pct,
     }
     return {"portfolio_fit": portfolio_fit}
@@ -161,22 +162,81 @@ def report_synthesis_node(state: AgentState) -> AgentState:
     return {"report": report}
 
 
+# def risk_quantification_node(state: AgentState) -> AgentState:
+#     ticker = state["ticker"]
+#     amount = state["amount"]
+#     try:
+#         df = yf.Ticker(ticker).history(period="1y")["Close"]
+#         returns = df.pct_change().dropna()
+
+#         var_95 = float(np.percentile(returns, 5)) * amount
+#         rf_daily = 0.06 / 252
+#         excess = returns - rf_daily
+#         sharpe = float((excess.mean() / excess.std()) * np.sqrt(252))
+
+#         nifty = yf.Ticker("^NSEI").history(period="1y")["Close"].pct_change().dropna()
+#         common = returns.align(nifty, join="inner")
+#         cov = np.cov(common[0], common[1])
+#         beta = float(cov[0][1] / cov[1][1]) if cov[1][1] != 0 else 1.0
+#         volatility = float(returns.std() * np.sqrt(252))
+
+#         risk_score = min(10, round(
+#             (abs(var_95) / amount * 100) * 0.4 +
+#             volatility * 10 * 0.4 +
+#             max(0, beta - 1) * 2 * 0.2
+#         , 1))
+
+#         risk_scores = {
+#             "var_95_inr": float(round(var_95, 2)),      # ✅ explicit float()
+#             "sharpe_ratio": float(round(sharpe, 3)),    # ✅
+#             "beta": float(round(beta, 3)),              # ✅
+#             "annual_volatility": float(round(volatility, 4)),  # ✅
+#             "risk_score": float(risk_score),            # ✅
+#         }
+#     except Exception as e:
+#         risk_scores = {"error": str(e), "risk_score": 5.0}
+
+#     return {"risk_scores": risk_scores}
+
 def risk_quantification_node(state: AgentState) -> AgentState:
     ticker = state["ticker"]
     amount = state["amount"]
     try:
         df = yf.Ticker(ticker).history(period="1y")["Close"]
+        
+        # Guard: empty price data
+        if df.empty or len(df) < 2:
+            return {"risk_scores": {"error": "Insufficient price data", "risk_score": 5.0}}
+
         returns = df.pct_change().dropna()
 
+        # Guard: empty returns after dropna
+        if returns.empty:
+            return {"risk_scores": {"error": "No valid returns", "risk_score": 5.0}}
+
+        # VaR at 95%
         var_95 = float(np.percentile(returns, 5)) * amount
+
+        # Sharpe — guard against zero std
         rf_daily = 0.06 / 252
         excess = returns - rf_daily
-        sharpe = float((excess.mean() / excess.std()) * np.sqrt(252))
+        sharpe = float((excess.mean() / excess.std()) * np.sqrt(252)) if excess.std() != 0 else 0.0
 
-        nifty = yf.Ticker("^NSEI").history(period="1y")["Close"].pct_change().dropna()
-        common = returns.align(nifty, join="inner")
-        cov = np.cov(common[0], common[1])
-        beta = float(cov[0][1] / cov[1][1]) if cov[1][1] != 0 else 1.0
+        # Beta vs Nifty — guard against misaligned / empty overlap
+        nifty_raw = yf.Ticker("^NSEI").history(period="1y")["Close"]
+        if nifty_raw.empty:
+            beta = 1.0
+        else:
+            nifty = nifty_raw.pct_change().dropna()
+            aligned_stock, aligned_nifty = returns.align(nifty, join="inner")
+
+            # Guard: need at least 2 overlapping points for covariance
+            if len(aligned_stock) < 2 or len(aligned_nifty) < 2:
+                beta = 1.0
+            else:
+                cov = np.cov(aligned_stock, aligned_nifty)
+                beta = float(cov[0][1] / cov[1][1]) if cov[1][1] != 0 else 1.0
+
         volatility = float(returns.std() * np.sqrt(252))
 
         risk_score = min(10, round(
@@ -186,12 +246,13 @@ def risk_quantification_node(state: AgentState) -> AgentState:
         , 1))
 
         risk_scores = {
-            "var_95_inr": float(round(var_95, 2)),      # ✅ explicit float()
-            "sharpe_ratio": float(round(sharpe, 3)),    # ✅
-            "beta": float(round(beta, 3)),              # ✅
-            "annual_volatility": float(round(volatility, 4)),  # ✅
-            "risk_score": float(risk_score),            # ✅
+            "var_95_inr": float(round(var_95, 2)),
+            "sharpe_ratio": float(round(sharpe, 3)),
+            "beta": float(round(beta, 3)),
+            "annual_volatility": float(round(volatility, 4)),
+            "risk_score": float(risk_score),
         }
+
     except Exception as e:
         risk_scores = {"error": str(e), "risk_score": 5.0}
 
