@@ -9,7 +9,11 @@ import json, uuid, asyncio
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from fastapi.responses import Response
-from agent.voice import translate_to_english_sarvam, generate_audio_elevenlabs
+from agent.voice import translate_to_english_sarvam, generate_audio_elevenlabs, generate_audio_sarvam
+from agent.market import market_agent_node
+from agent.technical import technical_agent_node
+from agent.news import news_agent_node
+from agent.intent_parser import resolve_ticker
 
 load_dotenv()
 
@@ -46,6 +50,7 @@ class WatchlistRequest(BaseModel):
 
 class VoiceRequest(BaseModel):
     text: str
+    speaker: str = "tanya"
 
 class TranslationRequest(BaseModel):
     text: str
@@ -130,12 +135,30 @@ async def analyze_stream(message: str, user_id: str = "default_user"):
 
 @app.post("/voice/synthesize")
 async def voice_synthesize(req: VoiceRequest):
-    audio_bytes = await generate_audio_elevenlabs(req.text)
+    audio_bytes = await generate_audio_sarvam(req.text, req.speaker)
     if not audio_bytes:
         raise HTTPException(status_code=500, detail="Audio generation failed")
-    return Response(content=audio_bytes, media_type="audio/mpeg")
+    return Response(content=audio_bytes, media_type="audio/wav")
 
 @app.post("/translate")
 async def translate_text(req: TranslationRequest):
     translated = await translate_to_english_sarvam(req.text)
     return {"translated_text": translated}
+
+@app.get("/market/{ticker}")
+def get_market(ticker: str):
+    resolved_ticker = resolve_ticker(ticker)
+    state = {"ticker": resolved_ticker}
+    market_res = market_agent_node(state)
+    tech_res = technical_agent_node(state)
+    return {
+        "market_data": market_res.get("market_data"),
+        "technical_data": tech_res.get("technical_data")
+    }
+
+@app.get("/news/{ticker}")
+def get_news(ticker: str):
+    resolved_ticker = resolve_ticker(ticker)
+    state = {"ticker": resolved_ticker}
+    news_res = news_agent_node(state)
+    return {"news_data": news_res.get("news_data")}

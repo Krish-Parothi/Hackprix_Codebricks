@@ -1,8 +1,11 @@
 import yfinance as yf
-import requests, os
+import requests, os, json
 from graphs.state import AgentState
 from datetime import datetime
 from dotenv import load_dotenv
+from langchain_groq import ChatGroq
+from langchain_core.prompts import ChatPromptTemplate
+
 load_dotenv()
 AV_KEY = os.getenv("ALPHA_VANTAGE_KEY")
 
@@ -51,6 +54,17 @@ def market_agent_node(state: AgentState) -> AgentState:
             "earnings": earnings,
             "fetched_at": datetime.utcnow().isoformat(),
         }
+        
+        try:
+            llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API_KEY"))
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", "You are the Market Analyst AI. Summarize this market data into 2 natural, conversational sentences as if you are speaking in a boardroom. Speak out the price, day change, and volume. Do not use markdown or greetings."),
+                ("human", "{data}")
+            ])
+            market_data["speech_text"] = (prompt | llm).invoke({"data": json.dumps(market_data)}).content
+        except Exception as e:
+            market_data["speech_text"] = None
+            
     except Exception as e:
         market_data = {"error": str(e)}
 

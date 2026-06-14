@@ -123,13 +123,9 @@ def build_graph():
 
     g.set_entry_point("intent_parser")
     g.add_edge("intent_parser", "market")
-    g.add_edge("intent_parser", "technical")
-    g.add_edge("intent_parser", "news")
-    g.add_edge("intent_parser", "rag")
-
-    g.add_edge("market", "aggregator")
-    g.add_edge("technical", "aggregator")
-    g.add_edge("news", "aggregator")
+    g.add_edge("market", "technical")
+    g.add_edge("technical", "news")
+    g.add_edge("news", "rag")
     g.add_edge("rag", "aggregator")
 
     g.add_edge("aggregator", "contradiction_detector")

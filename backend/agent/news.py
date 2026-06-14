@@ -1,8 +1,11 @@
-import requests, os
+import requests, os, json
 from transformers import pipeline
 from graphs.state import AgentState
 from datetime import datetime
 from dotenv import load_dotenv
+from langchain_groq import ChatGroq
+from langchain_core.prompts import ChatPromptTemplate
+
 load_dotenv()
 NEWS_KEY = os.getenv("NEWS_API_KEY")
 _sentiment = None
@@ -22,7 +25,7 @@ def news_agent_node(state: AgentState) -> AgentState:
     try:
         url = (
             f"https://newsapi.org/v2/everything?q={ticker}"
-            f"&sortBy=publishedAt&pageSize=10&apiKey={NEWS_KEY}"
+            f"&sortBy=publishedAt&pageSize=10&language=en&apiKey={NEWS_KEY}"
         )
         articles = requests.get(url, timeout=10).json().get("articles", [])[:5]
         pipe = get_sentiment_pipeline()
@@ -48,6 +51,19 @@ def news_agent_node(state: AgentState) -> AgentState:
             "aggregate_sentiment": agg,
             "fetched_at": datetime.utcnow().isoformat(),
         }
+        
+        try:
+            llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API_KEY"))
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", "You are the News Crawler AI. Summarize this news data (headlines and aggregate sentiment) into 2 natural, conversational sentences as if you are speaking in a boardroom. Do not use markdown or greetings."),
+                ("human", "{data}")
+            ])
+            # Only send titles to LLM to save tokens
+            news_summary_data = {"aggregate_sentiment": agg, "articles": [a["title"] for a in scored]}
+            news_data["speech_text"] = (prompt | llm).invoke({"data": json.dumps(news_summary_data)}).content
+        except Exception as e:
+            news_data["speech_text"] = None
+            
     except Exception as e:
         news_data = {"error": str(e)}
 

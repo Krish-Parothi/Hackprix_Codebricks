@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, FastForward, RotateCcw, AlertTriangle, ExternalLink, HelpCircle, ShieldAlert, Cpu, BarChart2, MessageSquare, Shield, Activity } from 'lucide-react';
+import { Shield, Play, Pause, Activity, Database, TrendingUp, AlertTriangle, MessageSquare, Zap, X } from 'lucide-react';
 
 interface BoardroomScreenProps {
   ticker: string;
@@ -8,631 +8,562 @@ interface BoardroomScreenProps {
   onBackToLanding: () => void;
 }
 
-interface Agent {
+interface AgentStatus {
   id: string;
   name: string;
   role: string;
+  color: string;
+  status: 'STANDBY' | 'ACTIVE' | 'SPEAKING';
   avatar: string;
-  status: string;
-  angle: number; // For rendering around table
 }
 
-export const BoardroomScreen: React.FC<BoardroomScreenProps> = ({
-  ticker,
-  onVerdictReached,
-  onSwitchToMonitoring,
-  onBackToLanding
-}) => {
-  // Live SSE state machine
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [speakerId, setSpeakerId] = useState<string | null>('chair');
-  const [displayedText, setDisplayedText] = useState('Welcome. Initializing data stream from FinAgentX...');
-  const [deliberationProgress, setDeliberationProgress] = useState(0);
+const initialAgents: AgentStatus[] = [
+  { id: 'chair', name: 'Chairperson AI', role: 'Deliberation Lead', color: 'var(--primary)', status: 'STANDBY', avatar: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=150&q=80' },
+  { id: 'market', name: 'Market Analyst', role: 'Fundamental Data', color: '#3b82f6', status: 'STANDBY', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80' },
+  { id: 'technical', name: 'Technical', role: 'Signals & Trend', color: '#8b5cf6', status: 'STANDBY', avatar: 'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=150&q=80' },
+  { id: 'news', name: 'News Crawler', role: 'Global Sentiment', color: '#f59e0b', status: 'STANDBY', avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=150&q=80' },
+  { id: 'sentiment', name: 'Context & NLP', role: 'Text Analytics', color: '#10b981', status: 'STANDBY', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80' },
+  { id: 'risk', name: 'Systemic Risk', role: 'Drawdown Evaluator', color: '#ef4444', status: 'STANDBY', avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80' },
+  { id: 'bull', name: 'Bull Advisor', role: 'Growth Perspective', color: '#22c55e', status: 'STANDBY', avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=150&q=80' },
+  { id: 'bear', name: 'Bear Advisor', role: 'Risk Perspective', color: '#f97316', status: 'STANDBY', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80' }
+];
 
-  // Evidence Wall Data (live updates)
-  const [evidenceData, setEvidenceData] = useState({
-    price: '-', change: '-', isPositive: true, volume: '-', peRatio: '-', rsi: '-', macd: '-', ema: '-', volatility: '-', riskScore: '-', drawdown: '-'
-  });
+export const BoardroomScreen: React.FC<BoardroomScreenProps> = ({ ticker, onVerdictReached, onSwitchToMonitoring, onBackToLanding }) => {
+  const [agents, setAgents] = useState<AgentStatus[]>(initialAgents);
+  const [displayedText, setDisplayedText] = useState('Awaiting command to initiate sequence...');
+  const [isDebating, setIsDebating] = useState(false);
+  const [hasStarted, setHasStarted] = useState(false);
   const [newsFeed, setNewsFeed] = useState<string[]>([]);
-  
-  const [activeAgentStatuses, setActiveAgentStatuses] = useState<Record<string, string>>({
-    chair: 'Awaiting connections...', market: 'Standby', news: 'Standby', sentiment: 'Standby', risk: 'Standby', bull: 'Standby', bear: 'Standby'
+  const [inputValue, setInputValue] = useState(ticker);
+  const [activeTicker, setActiveTicker] = useState(ticker);
+  const eventSourceRef = useRef<EventSource | null>(null);
+
+  const playbackQueueRef = useRef<any[]>([]);
+  const isPlayingRef = useRef(false);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const doneDataRef = useRef<any | null>(null);
+  const finalReportRef = useRef<any | null>(null);
+
+  const [evidenceData, setEvidenceData] = useState({
+    price: '-', change: '-', isPositive: true, volume: '-', peRatio: '-', rsi: 50, macd: '-', ema: '-', beta: 1.15
   });
 
-  // Reference for storing the final report before firing the callback
-  const finalReportRef = useRef<any>(null);
+  const fetchEvidenceData = async (targetTicker: string) => {
+    if (!targetTicker) return;
+    setDisplayedText(`Fetching market intelligence for ${targetTicker}...`);
+    try {
+      const marketRes = await fetch(`/api/market/${targetTicker}`);
+      const marketData = await marketRes.json();
 
-  // Agents specification (7 agents seated at coordinates)
-  const agents: Agent[] = [
-    { id: 'chair', name: 'Chairperson AI', role: 'Deliberation Lead', avatar: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=120&h=120&q=80', status: 'Active', angle: 0 },
-    { id: 'market', name: 'Market Analyst', role: 'Technical signals', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&h=120&q=80', status: 'Standby', angle: 51.4 },
-    { id: 'news', name: 'News Crawler', role: 'Context & NLP', avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=120&h=120&q=80', status: 'Standby', angle: 102.8 },
-    { id: 'sentiment', name: 'Sentiment Engine', role: 'Momentum crawler', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&h=120&q=80', status: 'Standby', angle: 154.2 },
-    { id: 'risk', name: 'Risk Assessment', role: 'Drawdown evaluator', avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=120&h=120&q=80', status: 'Standby', angle: 205.6 },
-    { id: 'bull', name: 'Bull Advisor', role: 'Growth perspective', avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=120&h=120&q=80', status: 'Standby', angle: 257.0 },
-    { id: 'bear', name: 'Bear Advisor', role: 'Systemic risk assessment', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&h=120&q=80', status: 'Standby', angle: 308.4 }
-  ];
-
-  // The live SSE connection loop
-  useEffect(() => {
-    if (!isPlaying) return;
-
-    // Use URL query parameters properly encoded
-    const encodedMessage = encodeURIComponent(`Analyze ${ticker}`);
-    const eventSource = new EventSource(`/api/analyze/stream?message=${encodedMessage}&user_id=demo_user`);
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        const node = data.node;
-        const update = data.update || {};
-
-        if (node === 'market') {
-          setSpeakerId('market');
-          setActiveAgentStatuses(p => ({ ...p, market: 'Fetching price & fundamentals...' }));
-          setDisplayedText('Market Analyst: Fetching historical price data and volume metrics...');
-          if (update.market_data && !update.market_data.error) {
-             const mData = update.market_data;
-             const priceStr = typeof mData.price === 'number' ? `$${mData.price.toFixed(2)}` : `$${mData.price || '-'}`;
-             const dayChange = typeof mData.day_change === 'number' ? mData.day_change : 0;
-             const changeStr = `${dayChange > 0 ? '+' : ''}${dayChange.toFixed(2)}%`;
-             
-             setEvidenceData(p => ({
-               ...p,
-               price: priceStr,
-               peRatio: String(mData.pe_ratio || '-'),
-               change: changeStr,
-               isPositive: dayChange >= 0,
-               volume: mData.formatted_volume || '-'
-             }));
-          }
-        } else if (node === 'technical') {
-          setSpeakerId('market');
-          setActiveAgentStatuses(p => ({ ...p, market: 'Calculating technical indicators...' }));
-          setDisplayedText('Market Analyst: Technical analysis complete. RSI and MACD signals generated.');
-          if (update.technical_data && !update.technical_data.error) {
-             const tData = update.technical_data;
-             const rsiFormatted = typeof tData.rsi === 'number' ? tData.rsi.toFixed(1) : String(tData.rsi || '-');
-             setEvidenceData(p => ({
-               ...p,
-               rsi: rsiFormatted,
-               macd: tData.macd_signal || '-',
-               ema: tData.trend || '-'
-             }));
-          }
-        } else if (node === 'news') {
-          setSpeakerId('news');
-          setActiveAgentStatuses(p => ({ ...p, market: 'Done', news: 'Parsing articles...' }));
-          setDisplayedText('News Crawler: Scanning global financial news and sentiment streams.');
-          if (update.news_data && update.news_data.articles) {
-             setNewsFeed(update.news_data.articles.map((a:any) => a.title).slice(0, 4));
-          }
-        } else if (node === 'rag') {
-          setSpeakerId('sentiment');
-          setActiveAgentStatuses(p => ({ ...p, news: 'Done', sentiment: 'Scanning internal docs...' }));
-          setDisplayedText('Sentiment Engine: Querying internal knowledge base and earnings transcripts.');
-        } else if (node === 'contradiction_detector' || node === 'risk_quantification') {
-          setSpeakerId('risk');
-          setActiveAgentStatuses(p => ({ ...p, sentiment: 'Done', risk: 'Running models...' }));
-          setDisplayedText('Risk Assessment: Evaluating systemic risk limits and VaR metrics.');
-          if (update.risk_scores) {
-             setEvidenceData(p => ({
-               ...p,
-               riskScore: `${update.risk_scores.risk_score}/10`
-             }));
-          }
-        } else if (node === 'bull_agent') {
-          setSpeakerId('bull');
-          setActiveAgentStatuses(p => ({ ...p, risk: 'Done', bull: 'Formulating thesis...' }));
-          setDisplayedText('Bull Advisor: ' + (update.bull_thesis || 'Identifying upside catalysts...'));
-        } else if (node === 'bear_agent') {
-          setSpeakerId('bear');
-          setActiveAgentStatuses(p => ({ ...p, bull: 'Done', bear: 'Stress testing...' }));
-          setDisplayedText('Bear Advisor: ' + (update.bear_thesis || 'Identifying structural weaknesses...'));
-        } else if (node === 'report_synthesis') {
-          setSpeakerId('chair');
-          setActiveAgentStatuses(p => ({ ...p, bear: 'Done', chair: 'Synthesizing...' }));
-          setDisplayedText('Chairperson AI: Synthesizing committee findings and drafting final verdict...');
-          setDeliberationProgress(1); // triggers synthesis animation
-          
-          if (update.report) {
-            finalReportRef.current = update.report;
-          }
-        } else if (node === 'done') {
-          eventSource.close();
-          const threadId = data.thread_id;
-          const report = finalReportRef.current;
-          
-          if (report) {
-            let rec: 'BUY'|'HOLD'|'SELL' = 'BUY';
-            if (report.recommendation?.includes('HOLD')) rec = 'HOLD';
-            if (report.recommendation?.includes('SELL') || report.recommendation?.includes('AVOID')) rec = 'SELL';
-            
-            const conf = Math.round((report.signal_score || 5) * 10);
-            const factors = (report.pros || []).map((p:string) => ({name: p.slice(0,35), score: 10})).concat(
-              (report.cons || []).map((c:string) => ({name: c.slice(0,35), score: -10}))
-            ).slice(0, 4); // Only show top 4
-            
-            const summary = report.resolution || "Consensus reached.";
-            
-            // Wait a tiny bit for the UI animation
-            setTimeout(() => {
-              onVerdictReached(rec, conf, factors, summary, threadId);
-            }, 1500);
-          }
-        }
-      } catch (err) {
-        console.error("SSE Parse Error", err);
+      if (marketData.market_data) {
+        const md = marketData.market_data;
+        const priceStr = typeof md.price === 'number' ? md.price.toFixed(2) : md.price || '0';
+        const dayChange = typeof md.day_change === 'number' ? md.day_change : 0;
+        setEvidenceData(p => ({
+          ...p,
+          price: priceStr,
+          change: `${dayChange > 0 ? '+' : ''}${dayChange.toFixed(2)}`,
+          isPositive: dayChange >= 0,
+          volume: md.formatted_volume || '-',
+          peRatio: md.pe_ratio?.toString() || '-'
+        }));
       }
-    };
+      if (marketData.technical_data) {
+        const ts = marketData.technical_data;
+        setEvidenceData(p => ({
+          ...p, rsi: ts.rsi || 50, macd: ts.macd_signal || '-', ema: ts.trend || ts.ema_signal || '-'
+        }));
+      }
 
-    eventSource.onerror = () => {
-      console.log("EventSource Error or Closed");
-      eventSource.close();
-    };
+      const newsRes = await fetch(`/api/news/${targetTicker}`);
+      const newsData = await newsRes.json();
+      if (newsData.news_data?.articles) {
+        setNewsFeed(newsData.news_data.articles.map((a: any) => a.title).slice(0, 4));
+      }
 
+      setDisplayedText(`Telemetry acquired for ${targetTicker}. Awaiting START DEBATE command.`);
+      setActiveTicker(targetTicker);
+    } catch (e) {
+      setDisplayedText(`Error fetching data for ${targetTicker}. Backend may be offline.`);
+      console.error(e);
+    }
+  };
+
+  const resetSession = () => {
+    if (hasStarted || isDebating) {
+      setHasStarted(false);
+      setIsDebating(false);
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current = null;
+      }
+      playbackQueueRef.current = [];
+      isPlayingRef.current = false;
+      doneDataRef.current = null;
+      finalReportRef.current = null;
+      setDisplayedText('Session interrupted. Ready for new ticker.');
+      setAgents(prev => prev.map(a => ({ ...a, status: 'STANDBY' })));
+    }
+  };
+
+  const toggleSession = () => {
+    if (isDebating) {
+      // Pause
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+      setIsDebating(false);
+      setDisplayedText('Session paused by user.');
+      setAgents(prev => prev.map(a => ({ ...a, status: 'STANDBY' })));
+    } else {
+      // Start / Resume
+      const targetTicker = inputValue.trim().toUpperCase() || activeTicker;
+      if (!targetTicker) {
+        setDisplayedText('Error: No ticker symbol provided.');
+        return;
+      }
+      setActiveTicker(targetTicker);
+      setIsDebating(true);
+      setHasStarted(true);
+      setDisplayedText(`Initiating secure connection to FinAgentX Backend for ${targetTicker}...`);
+      setAgents(prev => prev.map(a => ({ ...a, status: 'STANDBY' })));
+
+      const encodedMessage = encodeURIComponent(`Analyze ${targetTicker}`);
+      const es = new EventSource(`/api/analyze/stream?message=${encodedMessage}`);
+      eventSourceRef.current = es;
+
+      const processQueue = async () => {
+        if (isPlayingRef.current || playbackQueueRef.current.length === 0) {
+          if (playbackQueueRef.current.length === 0 && !isPlayingRef.current && doneDataRef.current) {
+            setDisplayedText('Committee deliberation complete. Generating final verdict.');
+            setAgents(prev => prev.map(a => a.id === 'chair' ? { ...a, status: 'SPEAKING' } : { ...a, status: 'STANDBY' }));
+            setTimeout(() => {
+              setAgents(prev => prev.map(a => ({ ...a, status: 'STANDBY' })));
+              
+              const report = finalReportRef.current || {};
+              const recStr = (report.recommendation || 'HOLD').toUpperCase();
+              let verdict: 'BUY' | 'HOLD' | 'SELL' = 'HOLD';
+              if (recStr.includes('BUY') || recStr.includes('ACCUMULATE')) verdict = 'BUY';
+              if (recStr.includes('SELL') || recStr.includes('AVOID')) verdict = 'SELL';
+              
+              const conf = report.signal_score ? Math.round(report.signal_score * 10) : 85;
+              const factors = [
+                { name: 'Signal Strength', score: conf },
+                { name: 'Risk Profile', score: report.risk_score ? Math.round(report.risk_score * 10) : 50 }
+              ];
+              
+              onVerdictReached(verdict, conf, factors, report.resolution || 'Analysis complete.', doneDataRef.current.thread_id || 'demo');
+              doneDataRef.current = null;
+            }, 3000);
+          }
+          return;
+        }
+
+        isPlayingRef.current = true;
+        const eventData = playbackQueueRef.current.shift();
+
+        const nodeToAgentMap: Record<string, string> = {
+          'intent_parser': 'chair', 'market': 'market', 'technical': 'technical',
+          'news': 'news', 'rag': 'sentiment', 'bull_agent': 'bull', 'bear_agent': 'bear',
+          'report_synthesis': 'chair'
+        };
+
+        const nodeToSpeakerMap: Record<string, string> = {
+          'chair': 'amit', 'market': 'tanya', 'technical': 'rahul',
+          'news': 'shreya', 'sentiment': 'anushka', 'bull': 'tanya', 'bear': 'rahul'
+        };
+
+        const agentId = nodeToAgentMap[eventData.node];
+        let spokenText = "";
+
+        if (agentId) {
+          setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'SPEAKING' } : { ...a, status: 'ACTIVE' }));
+
+          if (eventData.node === 'market' && eventData.update.market_data) {
+            const md = eventData.update.market_data;
+            if (md.speech_text) {
+              spokenText = md.speech_text;
+            } else {
+              const change = typeof md.day_change === 'number' ? md.day_change.toFixed(2) : 'unknown';
+              spokenText = `Market Analyst reporting. The current price is ${md.price}, with a day change of ${change} percent. Volume is ${md.formatted_volume || 'unknown'}.`;
+            }
+            const priceStr = typeof md.price === 'number' ? md.price.toFixed(2) : md.price || '0';
+            setEvidenceData(p => ({
+              ...p, price: priceStr, change: `${md.day_change > 0 ? '+' : ''}${md.day_change.toFixed(2)}`, isPositive: md.day_change >= 0,
+              volume: md.formatted_volume || '-', peRatio: md.pe_ratio?.toString() || '-'
+            }));
+          } else if (eventData.node === 'technical' && eventData.update.technical_data) {
+            const ts = eventData.update.technical_data;
+            if (ts.speech_text) {
+              spokenText = ts.speech_text;
+            } else {
+              spokenText = `Technical Analyst here. RSI is at ${ts.rsi}. The trend indicates ${ts.trend}. Support is at ${ts.support}.`;
+            }
+            setEvidenceData(p => ({
+              ...p, rsi: ts.rsi || 50, macd: ts.macd_signal || '-', ema: ts.trend || ts.ema_signal || '-'
+            }));
+          } else if (eventData.node === 'news' && eventData.update.news_data) {
+            const nd = eventData.update.news_data;
+            if (nd.speech_text) {
+              spokenText = nd.speech_text;
+            } else {
+              spokenText = `News Crawler reporting. The aggregate news sentiment is ${nd.aggregate_sentiment}.`;
+            }
+            if (nd.articles) {
+              setNewsFeed(nd.articles.map((a: any) => a.title).slice(0, 4));
+            }
+          } else if (eventData.node === 'bull_agent' && eventData.update.bull_thesis) {
+            spokenText = eventData.update.bull_thesis;
+          } else if (eventData.node === 'bear_agent' && eventData.update.bear_thesis) {
+            spokenText = eventData.update.bear_thesis;
+          } else if (eventData.node === 'report_synthesis' && eventData.update.report) {
+            finalReportRef.current = eventData.update.report;
+            const rec = eventData.update.report.recommendation || 'HOLD';
+            spokenText = `The committee has concluded its deliberation. Based on our analysis, our final recommendation is to ${rec}.`;
+          } else if (eventData.node === 'intent_parser') {
+            spokenText = `Welcome to the FinAgentX Investment Committee. I am the Chairperson. We will now deliberate on ${activeTicker}. Let us begin with the Market Analyst.`;
+          }
+
+          if (spokenText) {
+            setDisplayedText(`[${eventData.node.toUpperCase()}]: ${spokenText}`);
+            try {
+              const speaker = nodeToSpeakerMap[agentId] || 'tanya';
+              const audioRes = await fetch('/api/voice/synthesize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: spokenText, speaker })
+              });
+              if (audioRes.ok) {
+                const blob = await audioRes.blob();
+                const url = URL.createObjectURL(blob);
+                const audio = new Audio(url);
+                currentAudioRef.current = audio;
+                await new Promise((resolve) => {
+                  audio.onended = resolve;
+                  audio.onerror = resolve;
+                  audio.play().catch(resolve);
+                });
+              } else {
+                await new Promise(r => setTimeout(r, 2000));
+              }
+            } catch (e) {
+              await new Promise(r => setTimeout(r, 2000));
+            }
+          } else {
+            setDisplayedText(`[${eventData.node.toUpperCase()}]: Processing...`);
+            await new Promise(r => setTimeout(r, 500));
+          }
+
+          setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'ACTIVE' } : a));
+        }
+
+        isPlayingRef.current = false;
+        processQueue();
+      };
+
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.node === 'done') {
+            doneDataRef.current = data;
+            if (!isPlayingRef.current) processQueue();
+            return;
+          }
+          playbackQueueRef.current.push(data);
+          if (!isPlayingRef.current) processQueue();
+        } catch (e) { }
+      };
+
+      es.onerror = () => {
+        setDisplayedText('Connection interrupted. Please try again.');
+        es.close();
+        setIsDebating(false);
+      };
+    }
+  };
+
+  useEffect(() => {
     return () => {
-      eventSource.close();
+      if (eventSourceRef.current) eventSourceRef.current.close();
     };
-  }, [isPlaying, ticker, onVerdictReached]);
+  }, []);
 
   return (
-    <div className="boardroom-layout-grid">
-      {/* Glow Backdrops */}
-      <div className="glow-bg primary" style={{ top: '15%', left: '25%', opacity: speakerId === 'bull' ? 0.25 : speakerId === 'bear' ? 0.05 : 0.12 }} />
-      <div className="glow-bg secondary" style={{ bottom: '15%', right: '25%', opacity: speakerId === 'bear' ? 0.25 : speakerId === 'bull' ? 0.05 : 0.12 }} />
+    <div className="terminal-layout" style={{ display: 'flex', height: 'calc(100vh - 64px)', background: '#0a0f1e', overflow: 'hidden', position: 'relative' }}>
+      {/* Background Grid */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundImage: 'linear-gradient(rgba(0, 212, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 212, 255, 0.05) 1px, transparent 1px)', backgroundSize: '40px 40px', zIndex: 0, opacity: 0.5 }}></div>
 
-      {/* Header bar */}
-      <div className="glass-panel" style={{
-        gridColumn: '1 / span 3',
-        borderRadius: 0,
-        borderBottom: '1px solid var(--border-glass)',
-        padding: '0 30px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        zIndex: 10
-      }}>
-        {/* Back and Title */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <button
-            onClick={onBackToLanding}
-            style={{
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px solid var(--border-glass)',
-              borderRadius: '8px',
-              padding: '6px 12px',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              fontSize: '11px',
-              fontFamily: 'var(--font-mono)'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary)'}
-            onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-glass)'}
-          >
-            DISCONNECT
-          </button>
-          <div>
-            <h2 style={{ fontSize: '9px', fontFamily: 'var(--font-display)', color: 'var(--primary)', letterSpacing: '2.5px' }}>
-              INVESTMENT COMMITTEE SESSION
-            </h2>
-            <h1 style={{ fontSize: '18px', fontWeight: 700, color: '#fff' }}>
-              Subject: <span style={{ color: 'var(--primary)' }}>{ticker} Corporation</span>
-            </h1>
+      {/* LEFT PANEL: Agent Roster */}
+      <div style={{ width: '280px', borderRight: '1px solid rgba(0, 212, 255, 0.15)', padding: '24px', zIndex: 2, background: 'rgba(10, 15, 30, 0.8)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '32px' }}>
+          <h2 style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', letterSpacing: '2px', color: 'var(--primary)' }}>COMMITTEE</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className={isDebating ? "status-dot-pulse" : ""} style={{ width: '8px', height: '8px', borderRadius: '50%', background: isDebating ? 'var(--success)' : 'var(--text-muted)' }}></div>
+            <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{agents.length} AGENTS</span>
           </div>
         </div>
 
-        {/* Meeting ID */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-          <div style={{ textAlign: 'right' }}>
-            <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>MEETING ID</span>
-            <p style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>#AI-2026-001</p>
-          </div>
-          <div style={{ width: '1px', height: '24px', background: 'var(--border-glass)' }} />
-          <button
-            onClick={onSwitchToMonitoring}
-            style={{
-              background: 'rgba(0, 212, 255, 0.05)',
-              border: '1px solid var(--border-cyan)',
-              color: 'var(--primary)',
-              borderRadius: '8px',
-              padding: '8px 16px',
-              cursor: 'pointer',
-              fontSize: '11px',
-              fontWeight: 600,
-              fontFamily: 'var(--font-mono)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              transition: 'all 0.3s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.boxShadow = '0 0 10px var(--primary-glow)';
-              e.currentTarget.style.background = 'rgba(0, 212, 255, 0.15)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.boxShadow = 'none';
-              e.currentTarget.style.background = 'rgba(0, 212, 255, 0.05)';
-            }}
-          >
-            <Activity size={12} />
-            WATCHLIST MONITOR
-          </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', paddingRight: '4px' }}>
+          {agents.map((agent) => (
+            <div key={agent.id} style={{
+              display: 'flex', alignItems: 'center', gap: '12px', padding: '12px',
+              background: agent.status === 'SPEAKING' ? 'rgba(0, 212, 255, 0.1)' : 'rgba(255,255,255,0.02)', borderRadius: '8px',
+              border: `1px solid ${agent.status === 'SPEAKING' ? agent.color : 'rgba(255,255,255,0.05)'}`,
+              transition: 'all 0.3s ease',
+              boxShadow: agent.status === 'SPEAKING' ? `0 0 15px ${agent.color}40` : 'none'
+            }}>
+              {/* Agent Avatar */}
+              <div style={{ position: 'relative', width: '36px', height: '36px', borderRadius: '50%', padding: '2px', background: `linear-gradient(135deg, ${agent.color}, transparent)` }}>
+                <img src={agent.avatar} alt={agent.name} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                {agent.status === 'SPEAKING' && (
+                  <div style={{ position: 'absolute', bottom: -2, right: -2, width: '10px', height: '10px', borderRadius: '50%', background: 'var(--success)', border: '2px solid var(--bg-dark)' }}></div>
+                )}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: '#fff', fontWeight: 600 }}>{agent.name}</div>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{agent.role}</div>
+              </div>
+              {/* Status Pill */}
+              <div style={{
+                fontSize: '9px', padding: '3px 8px', borderRadius: '4px', fontFamily: 'var(--font-mono)',
+                background: agent.status === 'SPEAKING' ? `${agent.color}30` : 'rgba(255,255,255,0.05)',
+                color: agent.status === 'SPEAKING' ? agent.color : 'var(--text-muted)',
+                fontWeight: agent.status === 'SPEAKING' ? 700 : 400
+              }}>
+                {agent.status}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Left Sidebar: Session Control & Logs */}
-      <div className="glass-panel" style={{
-        margin: '20px 0 20px 20px',
-        border: '1px solid var(--border-glass)',
-        display: 'grid',
-        gridTemplateRows: 'auto 1fr',
-        overflow: 'hidden',
-        zIndex: 5
-      }}>
-        {/* Playback controls */}
-        <div style={{ padding: '20px', borderBottom: '1px solid var(--border-glass)' }}>
-          <h3 style={{ fontSize: '9px', fontFamily: 'var(--font-display)', color: 'var(--primary)', marginBottom: '15px', letterSpacing: '1px' }}>
-            BOARDROOM PROTOCOL
-          </h3>
+      {/* CENTER PANEL: Network Stage */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 2 }}>
 
-          <div style={{ display: 'flex', gap: '8px', justifyContent: 'space-between' }}>
-            <button
-              onClick={() => setIsPlaying(!isPlaying)}
-              style={{
-                flex: 1,
-                padding: '8px',
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid var(--border-glass)',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                color: '#fff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                fontSize: '11px'
-              }}
-            >
-              {isPlaying ? <Pause size={12} /> : <Play size={12} />}
-              {isPlaying ? 'PAUSE' : 'PLAY'}
-            </button>
-            <button
-              onClick={onBackToLanding}
-              style={{
-                padding: '8px 12px',
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid var(--border-glass)',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                color: '#fff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '11px'
-              }}
-              title="Reset Session"
-            >
-              <RotateCcw size={12} />
+        {/* Top Bar */}
+        <div style={{ padding: '20px 32px', borderBottom: '1px solid rgba(0, 212, 255, 0.15)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(10, 15, 30, 0.8)', backdropFilter: 'blur(10px)' }}>
+          <div>
+            <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', letterSpacing: '2px', color: 'var(--text-muted)' }}>INVESTMENT COMMITTEE SESSION</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginTop: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0, 212, 255, 0.05)', border: '1px solid rgba(0, 212, 255, 0.3)', borderRadius: '6px', padding: '6px 12px', width: '260px', boxShadow: 'inset 0 0 10px rgba(0,212,255,0.1)' }}>
+                <span style={{ color: 'var(--primary)', marginRight: '10px', fontFamily: 'var(--font-mono)', fontSize: '16px', animation: 'blink 1s step-end infinite' }}>&gt;</span>
+                <input
+                  type="text"
+                  value={inputValue}
+                  onChange={e => {
+                    setInputValue(e.target.value.toUpperCase());
+                    resetSession();
+                  }}
+                  placeholder="ENTER TICKER..."
+                  style={{ fontSize: '18px', fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#fff', background: 'transparent', border: 'none', outline: 'none', width: '100%', letterSpacing: '2px' }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      fetchEvidenceData(inputValue.trim().toUpperCase());
+                    }
+                  }}
+                  autoFocus
+                />
+                {inputValue && (
+                  <button
+                    onClick={() => {
+                      setInputValue('');
+                      resetSession();
+                    }}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', marginLeft: '8px' }}
+                    title="Clear text"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
+
+              {/* Recommended Tickers */}
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>RECOMMENDED:</span>
+                {['NVDA', 'RELIANCE', 'TSLA', 'AAPL'].map(t => (
+                  <button
+                    key={t}
+                    onClick={() => {
+                      setInputValue(t);
+                      resetSession();
+                      fetchEvidenceData(t);
+                    }}
+                    style={{
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '4px',
+                      padding: '4px 8px',
+                      color: 'var(--primary)',
+                      fontSize: '11px',
+                      fontFamily: 'var(--font-mono)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(0, 212, 255, 0.1)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+            <button onClick={onBackToLanding} style={{ border: '1px solid var(--danger)', color: 'var(--danger)', background: 'transparent', padding: '6px 16px', borderRadius: '4px', fontSize: '11px', fontFamily: 'var(--font-mono)', cursor: 'pointer', transition: 'all 0.2s' }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+              DISCONNECT
             </button>
           </div>
         </div>
 
-        {/* Panelist Status Feed */}
-        <div style={{ padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <h4 style={{ fontSize: '9px', fontFamily: 'var(--font-display)', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>
-            PANEL SEATS STATUS
-          </h4>
-          {agents.map((agent) => {
-            const isSpeaking = speakerId === agent.id;
-            const status = activeAgentStatuses[agent.id as keyof typeof activeAgentStatuses] || agent.status;
+        {/* Circular Network Grid Stage */}
+        <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+
+          {/* SVG Connection Lines */}
+          <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+            {agents.slice(1).map((agent, i) => {
+              const angle = (i * (360 / (agents.length - 1))) * (Math.PI / 180) - Math.PI / 2; // Offset by -90deg
+              const x2 = `calc(50% + ${Math.cos(angle) * 200}px)`;
+              const y2 = `calc(50% + ${Math.sin(angle) * 200}px)`;
+              const isSpeaking = agent.status === 'SPEAKING';
+              return (
+                <line key={`line-${i}`} x1="50%" y1="50%" x2={x2} y2={y2}
+                  stroke={isSpeaking ? agent.color : 'rgba(0, 212, 255, 0.1)'}
+                  strokeWidth={isSpeaking ? 3 : 1}
+                  strokeDasharray={isSpeaking ? "5,5" : "none"}
+                  style={{ transition: 'all 0.3s ease', animation: isSpeaking ? 'flowDash 0.5s linear infinite' : 'none' }}
+                />
+              );
+            })}
+          </svg>
+
+          {/* Central Command Button */}
+          <button
+            onClick={toggleSession}
+            style={{
+              position: 'absolute', width: '100px', height: '100px', borderRadius: '50%',
+              background: 'rgba(10, 15, 30, 0.9)', border: `2px solid ${isDebating ? 'var(--warning)' : 'var(--primary)'}`,
+              zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', boxShadow: `0 0 30px ${isDebating ? 'rgba(255, 209, 102, 0.3)' : 'rgba(0, 212, 255, 0.3)'}`,
+              transition: 'all 0.3s'
+            }}
+          >
+            {isDebating ? <Pause size={32} color="var(--warning)" /> : <Play size={32} color="var(--primary)" style={{ marginLeft: '4px' }} />}
+            <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: isDebating ? 'var(--warning)' : 'var(--primary)', marginTop: '8px', letterSpacing: '1px' }}>
+              {isDebating ? 'PAUSE' : (hasStarted ? 'RESUME' : (inputValue ? 'START DEBATE' : 'START'))}
+            </div>
+          </button>
+
+          {/* Satellite Agent Nodes */}
+          {agents.slice(1).map((agent, i) => {
+            const angle = (i * (360 / (agents.length - 1))) * (Math.PI / 180) - Math.PI / 2;
+            const isSpeaking = agent.status === 'SPEAKING';
             return (
               <div key={agent.id} style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                opacity: isSpeaking ? 1 : 0.6,
-                transform: isSpeaking ? 'translateX(4px)' : 'translateX(0)',
-                transition: 'all 0.3s'
+                position: 'absolute', width: '70px', height: '70px',
+                transform: `translate(${Math.cos(angle) * 200}px, ${Math.sin(angle) * 200}px)`,
+                zIndex: 5, display: 'flex', flexDirection: 'column', alignItems: 'center'
               }}>
-                <div style={{ position: 'relative' }}>
-                  <img
-                    src={agent.avatar}
-                    alt={agent.name}
-                    style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '50%',
-                      border: `1.5px solid ${isSpeaking ? 'var(--primary)' : 'rgba(255,255,255,0.1)'}`,
-                      boxShadow: isSpeaking ? '0 0 10px var(--primary-glow)' : 'none'
-                    }}
-                  />
-                  {isSpeaking && (
-                    <div style={{
-                      position: 'absolute',
-                      bottom: 0,
-                      right: 0,
-                      width: '8px',
-                      height: '8px',
-                      borderRadius: '50%',
-                      background: 'var(--success)',
-                      border: '1.5px solid var(--bg-medium)'
-                    }} />
-                  )}
+                <div style={{
+                  position: 'relative', width: '60px', height: '60px', borderRadius: '50%', padding: '3px',
+                  background: isSpeaking ? `linear-gradient(135deg, ${agent.color}, transparent)` : 'rgba(255,255,255,0.05)',
+                  boxShadow: isSpeaking ? `0 0 20px ${agent.color}80` : 'none', transition: 'all 0.3s'
+                }}>
+                  <img src={agent.avatar} alt={agent.name} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', opacity: isSpeaking ? 1 : 0.6 }} />
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <h5 style={{ fontSize: '12px', fontWeight: 600, color: isSpeaking ? 'var(--primary)' : '#fff' }}>{agent.name}</h5>
-                    {isSpeaking && (
-                      <div className="typing-indicator" style={{ display: 'flex', gap: '3px' }}>
-                        <span />
-                        <span />
-                        <span />
-                      </div>
-                    )}
-                  </div>
-                  <p style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{status}</p>
+                <div style={{
+                  fontSize: '9px', fontFamily: 'var(--font-mono)', color: isSpeaking ? '#fff' : 'var(--text-muted)',
+                  marginTop: '8px', textAlign: 'center', background: 'rgba(10, 15, 30, 0.8)', padding: '2px 6px', borderRadius: '4px'
+                }}>
+                  {agent.name.split(' ')[0].toUpperCase()}
                 </div>
               </div>
             );
           })}
         </div>
-      </div>
 
-      {/* Center Section: Circular Table Boardroom */}
-      <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
-        {/* Spotlight overlay behind active speakers */}
-        {speakerId === 'bull' && <div className="spotlight bull active" style={{ left: '20%', top: '10%' }} />}
-        {speakerId === 'bear' && <div className="spotlight bear active" style={{ right: '20%', top: '10%' }} />}
-
-        <div className="boardroom-table-container">
-          <div className="boardroom-table-projection">
-            {/* Concentric table rings */}
-            <div className="table-glow-ring outer" />
-            <div className="table-glow-ring inner" />
-
-            {/* Central core */}
-            <div className={`table-glow-ring center-core ${deliberationProgress > 0 ? 'deliberating' : ''}`}>
-              {deliberationProgress > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: 'var(--warning)', letterSpacing: '1px' }}>
-                    SYNTHESIZING
-                  </span>
-                  <div style={{
-                    width: '40px',
-                    height: '2px',
-                    background: 'rgba(255, 209, 102, 0.2)',
-                    marginTop: '4px',
-                    position: 'relative',
-                    overflow: 'hidden'
-                  }}>
-                    <div style={{
-                      position: 'absolute',
-                      width: '60%',
-                      height: '100%',
-                      background: 'var(--warning)',
-                      animation: 'flow 1s linear infinite'
-                    }} />
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  <Cpu size={24} color="var(--primary)" style={{ filter: 'drop-shadow(0 0 4px var(--primary))', animation: 'heartbeat 2s infinite ease-in-out' }} />
-                  <span style={{ fontSize: '8px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginTop: '4px', letterSpacing: '0.5px' }}>
-                    DECISION CORE
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* SVG Data lines pulsing to center */}
-            <svg className="data-stream-svg" viewBox="0 0 580 480">
-              {agents.map((agent, index) => {
-                // Compute seat coordinates
-                const angle = (agent.angle * Math.PI) / 180 - Math.PI / 2;
-                const x = 290 + 200 * Math.cos(angle);
-                const y = 240 + 140 * Math.sin(angle);
-                const isSpeaking = speakerId === agent.id;
-
-                return (
-                  <g key={agent.id}>
-                    {/* Connection line */}
-                    <line
-                      x1={x}
-                      y1={y}
-                      x2={290}
-                      y2={240}
-                      stroke={isSpeaking ? 'var(--primary)' : 'rgba(0, 212, 255, 0.1)'}
-                      strokeWidth={isSpeaking ? '1.5' : '0.5'}
-                      strokeDasharray={isSpeaking ? '5,5' : 'none'}
-                    />
-                    {isSpeaking && (
-                      <circle
-                        cx={290}
-                        cy={240}
-                        r="3"
-                        fill="var(--primary)"
-                        className="pulse-line"
-                        style={{
-                          animation: 'flow 1.5s linear infinite',
-                          motionPath: `path('M ${x} ${y} L 290 240')`
-                        }}
-                      />
-                    )}
-                  </g>
-                );
-              })}
-            </svg>
-
-            {/* Agent Seats placed around the elliptical table */}
-            {agents.map((agent) => {
-              const angle = (agent.angle * Math.PI) / 180 - Math.PI / 2;
-              const x = 290 + 200 * Math.cos(angle);
-              const y = 240 + 140 * Math.sin(angle);
-              const isSpeaking = speakerId === agent.id;
-
-              return (
-                <div
-                  key={agent.id}
-                  className={`agent-seat ${isSpeaking ? 'active' : ''}`}
-                  style={{
-                    left: `${x}px`,
-                    top: `${y}px`,
-                  }}
-                >
-                  <div className="agent-avatar-container">
-                    <img src={agent.avatar} alt={agent.name} className="agent-avatar" />
-                    <div className="agent-status-ring" />
-                    {isSpeaking && (
-                      <div className="speaking-wave">
-                        <span />
-                        <span />
-                        <span />
-                        <span />
-                        <span />
-                      </div>
-                    )}
-                  </div>
-                  <div className="agent-role-tag">{agent.role}</div>
-                  <div className="agent-status-text">
-                    {activeAgentStatuses[agent.id as keyof typeof activeAgentStatuses] || agent.status}
-                  </div>
-                </div>
-              );
-            })}
+        {/* Transcript Area */}
+        <div style={{ height: '100px', margin: '24px', borderRadius: '8px', padding: '16px', background: 'rgba(10, 15, 30, 0.8)', border: '1px solid rgba(0, 212, 255, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', gap: '12px' }}>
+          <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: 'rgba(0, 212, 255, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <MessageSquare size={14} color="var(--primary)" />
           </div>
-        </div>
-
-        {/* Live Conversation Transcript Speech Bubble at bottom */}
-        {speakerId && (
-          <div className="glass-panel dialogue-bubble" style={{
-            background: 'rgba(8, 12, 28, 0.95)',
-            border: '1px solid rgba(0, 212, 255, 0.2)',
-          }}>
-            <div style={{ position: 'relative' }}>
-              <img
-                src={agents.find(a => a.id === speakerId)?.avatar}
-                alt="Speaker"
-                style={{ width: '45px', height: '45px', borderRadius: '50%', border: '1.5px solid var(--primary)', boxShadow: '0 0 10px var(--primary-glow)' }}
-              />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--primary)', marginBottom: '6px', letterSpacing: '1px' }}>SYSTEM LOG</div>
+            <div style={{ fontSize: '14px', color: '#fff', lineHeight: '1.5', fontFamily: 'var(--font-main)' }}>
+              {displayedText}
+              {isDebating && <span style={{ display: 'inline-block', width: '8px', height: '14px', background: 'var(--primary)', marginLeft: '6px', animation: 'blink 1s step-end infinite' }}></span>}
             </div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--primary)' }}>
-                  {agents.find(a => a.id === speakerId)?.name}
-                </span>
-                <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-                  {agents.find(a => a.id === speakerId)?.role.toUpperCase()}
-                </span>
-              </div>
-              <p style={{ fontSize: '13.5px', color: '#fff', lineHeight: '1.5', fontFamily: 'var(--font-sans)', minHeight: '40px' }}>
-                {displayedText}
-                <span style={{
-                  display: 'inline-block',
-                  width: '6px',
-                  height: '12px',
-                  background: 'var(--primary)',
-                  marginLeft: '4px',
-                  animation: 'scanline 1s infinite alternate',
-                  verticalAlign: 'middle'
-                }} />
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Right Sidebar: Evidence Wall */}
-      <div className="glass-panel" style={{
-        margin: '20px 20px 20px 0',
-        border: '1px solid var(--border-glass)',
-        padding: '20px',
-        display: 'grid',
-        gridTemplateRows: 'auto auto auto 1fr',
-        gap: '20px',
-        overflow: 'hidden',
-        zIndex: 5
-      }}>
-        {/* Panel Header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '10px' }}>
-          <BarChart2 size={16} color="var(--primary)" />
-          <span style={{ fontSize: '9px', fontFamily: 'var(--font-display)', color: 'var(--primary)', letterSpacing: '1px' }}>
-            EVIDENCE INTELLIGENCE WALL
-          </span>
-        </div>
-
-        {/* Market Data */}
-        <div>
-          <h4 style={{ fontSize: '8px', fontFamily: 'var(--font-display)', color: 'var(--text-muted)', marginBottom: '8px', letterSpacing: '0.5px' }}>
-            MARKET DATA OVERVIEW
-          </h4>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', borderRadius: '6px' }}>
-              <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block' }}>PRICE</span>
-              <span style={{ fontSize: '16px', fontWeight: 600, color: '#fff', fontFamily: 'var(--font-mono)' }}>{evidenceData.price}</span>
-            </div>
-            <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', borderRadius: '6px' }}>
-              <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block' }}>DAILY CHANGE</span>
-              <span style={{ fontSize: '16px', fontWeight: 600, color: evidenceData.isPositive ? 'var(--success)' : 'var(--danger)', fontFamily: 'var(--font-mono)' }}>{evidenceData.change}</span>
-            </div>
-            <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', borderRadius: '6px' }}>
-              <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block' }}>VOLUME</span>
-              <span style={{ fontSize: '14px', fontWeight: 600, color: '#fff', fontFamily: 'var(--font-mono)' }}>{evidenceData.volume}</span>
-            </div>
-            <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', borderRadius: '6px' }}>
-              <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block' }}>P/E RATIO</span>
-              <span style={{ fontSize: '14px', fontWeight: 600, color: '#fff', fontFamily: 'var(--font-mono)' }}>{evidenceData.peRatio}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Technical and Risk Gauges */}
-        <div>
-          <h4 style={{ fontSize: '8px', fontFamily: 'var(--font-display)', color: 'var(--text-muted)', marginBottom: '8px', letterSpacing: '0.5px' }}>
-            TECHNICAL & RISK GAUGES
-          </h4>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', borderRadius: '6px' }}>
-              <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block' }}>RSI (14)</span>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--primary)', fontFamily: 'var(--font-mono)' }}>{evidenceData.rsi}</span>
-            </div>
-            <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', borderRadius: '6px' }}>
-              <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block' }}>EMA SIGNAL</span>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--success)', fontFamily: 'var(--font-mono)' }}>{evidenceData.ema}</span>
-            </div>
-            <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', borderRadius: '6px' }}>
-              <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block' }}>MACD LEVEL</span>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--primary)', fontFamily: 'var(--font-mono)' }}>{evidenceData.macd}</span>
-            </div>
-            <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', borderRadius: '6px' }}>
-              <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block' }}>PORTFOLIO BETA</span>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--warning)', fontFamily: 'var(--font-mono)' }}>1.15</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Live News Feed */}
-        <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <h4 style={{ fontSize: '8px', fontFamily: 'var(--font-display)', color: 'var(--text-muted)', marginBottom: '8px', letterSpacing: '0.5px' }}>
-            CONTEXT NEWS STREAM
-          </h4>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1, paddingRight: '4px' }}>
-            {newsFeed.map((news, idx) => (
-              <div key={idx} style={{
-                padding: '10px',
-                background: 'rgba(255,255,255,0.01)',
-                border: '1px solid var(--border-glass)',
-                borderRadius: '6px',
-                fontSize: '11px',
-                lineHeight: '1.4',
-                color: 'var(--text-secondary)'
-              }}>
-                {news}
-              </div>
-            ))}
           </div>
         </div>
       </div>
+
+      {/* RIGHT PANEL: Evidence Wall */}
+      <div style={{ width: '320px', borderLeft: '1px solid rgba(0, 212, 255, 0.15)', padding: '24px', zIndex: 2, background: 'rgba(10, 15, 30, 0.8)', backdropFilter: 'blur(10px)', overflowY: 'auto' }}>
+        <h2 style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', letterSpacing: '2px', color: 'var(--text-muted)', marginBottom: '24px' }}>EVIDENCE INTELLIGENCE</h2>
+
+        {/* Market Data Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '32px' }}>
+          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '16px', borderRadius: '8px' }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '8px' }}>PRICE</div>
+            <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'var(--font-display)', color: '#fff' }}>${evidenceData.price}</div>
+          </div>
+          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '16px', borderRadius: '8px' }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '8px' }}>DAY CHANGE</div>
+            <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'var(--font-display)', color: evidenceData.isPositive ? 'var(--success)' : 'var(--danger)' }}>{evidenceData.change}%</div>
+          </div>
+          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '16px', borderRadius: '8px' }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '8px' }}>VOLUME</div>
+            <div style={{ fontSize: '16px', fontWeight: 600, fontFamily: 'var(--font-display)', color: '#fff' }}>{evidenceData.volume}</div>
+          </div>
+          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '16px', borderRadius: '8px' }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '8px' }}>P/E RATIO</div>
+            <div style={{ fontSize: '16px', fontWeight: 600, fontFamily: 'var(--font-display)', color: '#fff' }}>{evidenceData.peRatio}</div>
+          </div>
+        </div>
+
+        {/* Technical Signals */}
+        <h2 style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', letterSpacing: '1px', color: 'var(--text-muted)', marginBottom: '16px' }}>TECHNICAL GAUGES</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '32px' }}>
+          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '16px', borderRadius: '8px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '12px' }}>RSI (14)</div>
+            <div style={{ fontSize: '24px', fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--warning)' }}>{evidenceData.rsi}</div>
+          </div>
+          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '16px', borderRadius: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '8px' }}>MACD</div>
+            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--success)' }}>{evidenceData.macd.toString().toUpperCase()}</div>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '12px', marginBottom: '8px' }}>EMA</div>
+            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--primary)' }}>{evidenceData.ema.toString().toUpperCase()}</div>
+          </div>
+        </div>
+
+        {/* News Stream */}
+        <h2 style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', letterSpacing: '1px', color: 'var(--text-muted)', marginBottom: '16px' }}>GLOBAL CONTEXT</h2>
+        <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', padding: '16px' }}>
+          {newsFeed.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {newsFeed.map((news, idx) => (
+                <div key={idx} style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                  <span style={{ color: 'var(--primary)', marginRight: '6px' }}>●</span> {news}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic', textAlign: 'center', padding: '20px 0' }}>
+              Awaiting news crawler...
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      <style>{`
+        @keyframes blink { 50% { opacity: 0; } }
+        @keyframes flowDash {
+          to { stroke-dashoffset: -20; }
+        }
+      `}</style>
     </div>
   );
 };

@@ -4,12 +4,12 @@ from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from graphs.state import AgentState
 
-llm = ChatGroq(model="openai/gpt-oss-120b", api_key=os.getenv("GROQ_API_KEY"))
+llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API_KEY"))
 
 BULL_PROMPT = ChatPromptTemplate.from_messages([
     ("system", """You are a highly optimistic Venture Capitalist and Bull Investor.
 Given the evidence bundle for a stock, write a persuasive 'Bull Thesis' highlighting all the positive signals, growth potential, and reasons to BUY.
-Keep it punchy, professional, and highlight specific metrics or news.
+CRITICAL: Keep it EXTREMELY short and highly impactful (max 2-3 sentences, under 50 words). Focus only on the most critical metrics or news.
 Do NOT output JSON, just write the thesis as a raw string."""),
     ("human", "Evidence:\n{evidence}")
 ])
@@ -29,7 +29,7 @@ def bull_agent_node(state: AgentState) -> AgentState:
 BEAR_PROMPT = ChatPromptTemplate.from_messages([
     ("system", """You are a strict, risk-averse Auditor and Bear Investor.
 Given the evidence bundle for a stock, write a harsh 'Bear Thesis' highlighting all the negative signals, risks, overvaluation concerns, and reasons to AVOID.
-Keep it punchy, professional, and highlight specific risks or weaknesses.
+CRITICAL: Keep it EXTREMELY short and highly impactful (max 2-3 sentences, under 50 words). Focus only on the most critical risks or weaknesses.
 Do NOT output JSON, just write the thesis as a raw string."""),
     ("human", "Evidence:\n{evidence}")
 ])

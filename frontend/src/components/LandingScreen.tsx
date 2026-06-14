@@ -1,29 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Search, ChevronRight, Activity, Cpu, Shield, Globe } from 'lucide-react';
+import React, { useEffect, useRef } from 'react';
+import { Shield, Activity, Cpu, ArrowRight, Zap, Globe, Database } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
-interface LandingScreenProps {
-  onAnalyze: (company: string) => void;
-}
-
-export const LandingScreen: React.FC<LandingScreenProps> = ({ onAnalyze }) => {
-  const [searchValue, setSearchValue] = useState('');
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+export const LandingScreen: React.FC = () => {
+  const navigate = useNavigate();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  const examples = ['NVDA', 'AAPL', 'MSFT', 'RELIANCE', 'TCS', 'TSLA', 'GOOGL'];
-
-  // Handle auto-complete suggestions
-  useEffect(() => {
-    if (searchValue.trim().length > 0) {
-      const filtered = examples.filter(ex => 
-        ex.toLowerCase().includes(searchValue.toLowerCase()) && 
-        ex.toLowerCase() !== searchValue.toLowerCase()
-      );
-      setSuggestions(filtered);
-    } else {
-      setSuggestions([]);
-    }
-  }, [searchValue]);
 
   // Particle background simulation
   useEffect(() => {
@@ -32,7 +13,6 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onAnalyze }) => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let animationFrameId: number;
     let width = (canvas.width = window.innerWidth);
     let height = (canvas.height = window.innerHeight);
 
@@ -42,116 +22,40 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onAnalyze }) => {
     };
     window.addEventListener('resize', handleResize);
 
-    // Particles: green/cyan particles moving upwards/downwards representing stock tickers
-    interface Particle {
-      x: number;
-      y: number;
-      vx: number;
-      vy: number;
-      radius: number;
-      color: string;
-      alpha: number;
-      glow: boolean;
-    }
-
-    const particles: Particle[] = [];
+    const particles: { x: number; y: number; vx: number; vy: number; radius: number; alpha: number }[] = [];
     const particleCount = 60;
 
     for (let i = 0; i < particleCount; i++) {
       particles.push({
         x: Math.random() * width,
         y: Math.random() * height,
-        vx: (Math.random() - 0.5) * 0.4,
-        vy: -Math.random() * 0.7 - 0.1, // Drift upwards
-        radius: Math.random() * 2 + 1,
-        color: Math.random() > 0.4 ? '#00d4ff' : '#14f195', // Cyan or Green
-        alpha: Math.random() * 0.5 + 0.2,
-        glow: Math.random() > 0.8,
+        vx: (Math.random() - 0.5) * 0.5,
+        vy: -Math.random() * 0.5 - 0.1, // Drift upwards
+        radius: Math.random() * 2 + 0.5,
+        alpha: Math.random() * 0.5 + 0.1,
       });
     }
 
+    let animationFrameId: number;
     const draw = () => {
-      ctx.fillStyle = '#050816';
-      ctx.fillRect(0, 0, width, height);
+      ctx.clearRect(0, 0, width, height);
 
-      // Render radial glow in background
-      const gradient = ctx.createRadialGradient(
-        width / 2, height / 2, 50,
-        width / 2, height / 2, width / 1.5
-      );
-      gradient.addColorStop(0, 'rgba(11, 16, 32, 0.6)');
-      gradient.addColorStop(0.5, 'rgba(5, 8, 22, 0.9)');
-      gradient.addColorStop(1, '#050816');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, width, height);
-
-      // Render grid grid lines
-      ctx.strokeStyle = 'rgba(0, 212, 255, 0.02)';
-      ctx.lineWidth = 1;
-      const gridSize = 80;
-      for (let x = 0; x < width; x += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, height);
-        ctx.stroke();
-      }
-      for (let y = 0; y < height; y += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(width, y);
-        ctx.stroke();
-      }
-
-      // Draw connections
-      ctx.strokeStyle = 'rgba(0, 212, 255, 0.05)';
-      ctx.lineWidth = 0.5;
-      for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const dx = particles[i].x - particles[j].x;
-          const dy = particles[i].y - particles[j].y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 120) {
-            ctx.beginPath();
-            ctx.moveTo(particles[i].x, particles[i].y);
-            ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.stroke();
-          }
-        }
-      }
-
-      // Draw particles
-      particles.forEach(p => {
-        ctx.save();
-        ctx.globalAlpha = p.alpha;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-        ctx.fillStyle = p.color;
-        
-        if (p.glow) {
-          ctx.shadowBlur = 8;
-          ctx.shadowColor = p.color;
-        }
-
-        ctx.fill();
-        ctx.restore();
-
-        // Update position
+      particles.forEach((p) => {
         p.x += p.vx;
         p.y += p.vy;
 
-        // Reset if goes off screen
-        if (p.y < -10) {
-          p.y = height + 10;
-          p.x = Math.random() * width;
-        }
-        if (p.x < -10 || p.x > width + 10) {
-          p.x = Math.random() * width;
-        }
+        if (p.y < 0) p.y = height;
+        if (p.x < 0) p.x = width;
+        if (p.x > width) p.x = 0;
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(0, 212, 255, ${p.alpha})`;
+        ctx.fill();
       });
 
       animationFrameId = requestAnimationFrame(draw);
     };
-
     draw();
 
     return () => {
@@ -160,223 +64,110 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ onAnalyze }) => {
     };
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (searchValue.trim()) {
-      onAnalyze(searchValue.trim().toUpperCase());
-    } else {
-      onAnalyze('NVIDIA');
-    }
-  };
-
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-      {/* Background Particles */}
-      <canvas ref={canvasRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 0 }} />
-
-      {/* Decorative cybernetic frames */}
-      <div style={{
-        position: 'absolute',
-        top: '20px',
-        left: '20px',
-        right: '20px',
-        bottom: '20px',
-        border: '1px solid rgba(0, 212, 255, 0.08)',
-        pointerEvents: 'none',
-        zIndex: 1
-      }}>
-        <div style={{ position: 'absolute', top: 0, left: 0, width: '15px', height: '15px', borderTop: '2px solid var(--primary)', borderLeft: '2px solid var(--primary)' }}></div>
-        <div style={{ position: 'absolute', top: 0, right: 0, width: '15px', height: '15px', borderTop: '2px solid var(--primary)', borderRight: '2px solid var(--primary)' }}></div>
-        <div style={{ position: 'absolute', bottom: 0, left: 0, width: '15px', height: '15px', borderBottom: '2px solid var(--primary)', borderLeft: '2px solid var(--primary)' }}></div>
-        <div style={{ position: 'absolute', bottom: 0, right: 0, width: '15px', height: '15px', borderBottom: '2px solid var(--primary)', borderRight: '2px solid var(--primary)' }}></div>
-      </div>
-
-      {/* Landing Cockpit Info Bar */}
-      <div style={{ position: 'absolute', top: '40px', left: '40px', display: 'flex', gap: '24px', zIndex: 2 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', opacity: 0.7 }}>
-          <Activity size={16} color="var(--primary)" />
-          <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', letterSpacing: '1px', color: 'var(--text-muted)' }}>SYSTEM: READY</span>
+    <div style={{ minHeight: '100vh', background: '#0a0f1e', color: '#fff', fontFamily: 'var(--font-main)', overflowX: 'hidden' }}>
+      
+      {/* Navbar */}
+      <nav style={{ padding: '24px 48px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(0, 212, 255, 0.1)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <Shield size={28} color="var(--primary)" />
+          <h1 style={{ fontSize: '20px', fontFamily: 'var(--font-display)', fontWeight: 800, letterSpacing: '2px' }}>FINPILOT <span style={{ color: 'var(--primary)' }}>AI</span></h1>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', opacity: 0.7 }}>
-          <Cpu size={16} color="var(--success)" />
-          <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', letterSpacing: '1px', color: 'var(--text-muted)' }}>AGENTS IN COMMITTEE: 7</span>
+        <div style={{ display: 'flex', gap: '32px', fontSize: '14px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+          <span style={{ cursor: 'pointer', transition: 'color 0.2s' }} onMouseEnter={e => e.currentTarget.style.color = '#fff'} onMouseLeave={e => e.currentTarget.style.color = 'var(--text-secondary)'}>Features</span>
+          <span style={{ cursor: 'pointer', transition: 'color 0.2s' }} onMouseEnter={e => e.currentTarget.style.color = '#fff'} onMouseLeave={e => e.currentTarget.style.color = 'var(--text-secondary)'}>Agents</span>
+          <span style={{ cursor: 'pointer', transition: 'color 0.2s' }} onMouseEnter={e => e.currentTarget.style.color = '#fff'} onMouseLeave={e => e.currentTarget.style.color = 'var(--text-secondary)'}>Documentation</span>
         </div>
-      </div>
+      </nav>
 
-      {/* Main Form content */}
-      <div className="glass-panel" style={{
-        position: 'relative',
-        zIndex: 2,
-        padding: '50px 60px',
-        width: '90%',
-        maxWidth: '780px',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        textAlign: 'center',
-        background: 'rgba(5, 8, 22, 0.75)',
-        borderColor: 'rgba(0, 212, 255, 0.15)',
-        boxShadow: '0 20px 80px rgba(0, 0, 0, 0.8), 0 0 40px rgba(0, 212, 255, 0.05)',
-      }}>
-        {/* Futuristic top emblem */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '20px', color: 'var(--primary)' }}>
-          <Shield size={24} style={{ filter: 'drop-shadow(0 0 8px var(--primary))' }} />
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', fontWeight: 600, letterSpacing: '3px' }}>SECURE BOARDROOM CONNECT</span>
-        </div>
-
-        {/* Title */}
-        <h1 style={{
-          fontSize: '40px',
-          fontWeight: 700,
-          letterSpacing: '8px',
-          lineHeight: '1.2',
-          background: 'linear-gradient(180deg, #ffffff 30%, #a5b4fc 100%)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          fontFamily: 'var(--font-display)',
-          marginBottom: '5px'
-        }}>
-          FINPILOT AI
-        </h1>
-        <h2 style={{
-          fontSize: '9px',
-          fontFamily: 'var(--font-display)',
-          color: 'var(--primary)',
-          letterSpacing: '4px',
-          textTransform: 'uppercase',
-          marginBottom: '25px',
-          textShadow: '0 0 10px rgba(0, 212, 255, 0.4)'
-        }}>
-          THE AI INVESTMENT COMMITTEE
-        </h2>
-
-        {/* Separator line */}
+      {/* Hero Section */}
+      <main style={{ padding: '80px 48px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', position: 'relative' }}>
+        
+        {/* Particle Canvas */}
+        <canvas ref={canvasRef} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 0, pointerEvents: 'none' }} />
+        
+        {/* Animated Perspective Grid Background */}
         <div style={{
-          width: '100%',
-          height: '1px',
-          background: 'linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.4), transparent)',
-          marginBottom: '25px'
-        }}></div>
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundImage: 'linear-gradient(rgba(0, 212, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 212, 255, 0.05) 1px, transparent 1px)',
+          backgroundSize: '50px 50px',
+          transform: 'perspective(500px) rotateX(60deg) translateY(-100px) translateZ(-200px)',
+          transformOrigin: 'top center',
+          zIndex: 0, pointerEvents: 'none', opacity: 0.5
+        }} />
+        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '80vw', height: '80vw', background: 'radial-gradient(circle, rgba(0,212,255,0.15) 0%, rgba(10,15,30,0) 60%)', zIndex: 0, pointerEvents: 'none' }} />
 
-        {/* Subtitle */}
-        <p style={{
-          fontSize: '15px',
-          color: 'var(--text-secondary)',
-          lineHeight: '1.6',
-          maxWidth: '540px',
-          marginBottom: '40px',
-          fontWeight: 300,
-        }}>
-          Building Better Financial Decisions Through Collaborative AI Intelligence.
-          Convening an executive-level board of expert financial models to debate and yield high-conviction signals.
-        </p>
-
-        {/* Search / Form */}
-        <form onSubmit={handleSubmit} style={{ width: '100%', maxWidth: '560px', position: 'relative', marginBottom: '25px' }}>
-          <div className="glass-input-container">
-            <Search size={20} color="var(--primary)" style={{ marginRight: '12px' }} />
-            <input
-              type="text"
-              placeholder="Search ticker (e.g. NVIDIA, AAPL, MSFT, RELIANCE, TCS)..."
-              value={searchValue}
-              onChange={(e) => setSearchValue(e.target.value)}
-              style={{ paddingRight: '120px' }}
-            />
-            <button
-              type="submit"
-              className="btn-cyber"
-              style={{
-                position: 'absolute',
-                right: '8px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                padding: '6px 20px',
-                fontSize: '11px',
-                clipPath: 'polygon(10% 0%, 100% 0%, 100% 70%, 90% 100%, 0% 100%, 0% 30%)',
-              }}
-            >
-              Analyze
-            </button>
+        <div style={{ zIndex: 1, maxWidth: '900px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: 'rgba(0, 212, 255, 0.05)', borderRadius: '30px', border: '1px solid rgba(0, 212, 255, 0.3)', marginBottom: '40px', boxShadow: '0 0 20px rgba(0, 212, 255, 0.1)' }}>
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--primary)', boxShadow: '0 0 10px var(--primary)' }}></span>
+            <span style={{ fontSize: '13px', fontFamily: 'var(--font-mono)', color: 'var(--primary)', letterSpacing: '2px', fontWeight: 600 }}>SYSTEM ONLINE • V3.5 DEPLOYED</span>
           </div>
 
-          {/* Autocomplete suggestion drop-down */}
-          {suggestions.length > 0 && (
-            <div className="glass-panel-heavy" style={{
-              position: 'absolute',
-              top: '100%',
-              left: 0,
-              right: 0,
-              marginTop: '8px',
-              zIndex: 10,
-              padding: '6px',
-              textAlign: 'left'
-            }}>
-              {suggestions.map((suggestion) => (
-                <div
-                  key={suggestion}
-                  onClick={() => {
-                    setSearchValue(suggestion);
-                    setSuggestions([]);
-                  }}
-                  style={{
-                    padding: '10px 16px',
-                    cursor: 'pointer',
-                    borderRadius: '6px',
-                    transition: 'background 0.2s',
-                    fontSize: '14px',
-                    fontFamily: 'var(--font-mono)',
-                    color: 'var(--text-secondary)'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(0, 212, 255, 0.1)'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                >
-                  {suggestion}
-                </div>
-              ))}
-            </div>
-          )}
-        </form>
+          <h2 style={{ fontSize: '72px', fontFamily: 'var(--font-main)', fontWeight: 800, lineHeight: '1.1', marginBottom: '24px', letterSpacing: '-2px', textAlign: 'center' }}>
+            The AI Investment <br />
+            <span style={{ background: 'linear-gradient(90deg, #fff 0%, var(--primary) 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', textShadow: '0 0 40px rgba(0,212,255,0.3)' }}>Boardroom is Open.</span>
+          </h2>
 
-        {/* Example items */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>POPULAR SECURED TICKERS:</span>
-          {examples.map((ex) => (
-            <button
-              key={ex}
-              onClick={() => onAnalyze(ex)}
-              style={{
-                background: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid rgba(0, 212, 255, 0.1)',
-                borderRadius: '4px',
-                padding: '4px 10px',
-                color: 'var(--text-secondary)',
-                fontFamily: 'var(--font-mono)',
-                fontSize: '11px',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = 'var(--primary)';
-                e.currentTarget.style.background = 'rgba(0, 212, 255, 0.05)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = 'rgba(0, 212, 255, 0.1)';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
-              }}
-            >
-              {ex}
-            </button>
+          <p style={{ fontSize: '20px', color: 'var(--text-secondary)', lineHeight: '1.6', marginBottom: '56px', maxWidth: '650px', margin: '0 auto 56px auto', textAlign: 'center' }}>
+            Convene an executive-level board of expert financial models. Watch them debate, analyze real-time data, and yield high-conviction signals for your portfolio.
+          </p>
+
+          <button 
+            onClick={() => navigate('/dashboard')}
+            className="premium-btn"
+            style={{ 
+              display: 'inline-flex', alignItems: 'center', gap: '16px', 
+              padding: '20px 48px', background: 'transparent', color: 'var(--primary)',
+              border: '2px solid var(--primary)', borderRadius: '4px', fontSize: '18px', fontFamily: 'var(--font-mono)', fontWeight: 700, letterSpacing: '2px',
+              cursor: 'pointer', transition: 'all 0.3s', position: 'relative', overflow: 'hidden'
+            }}
+          >
+            <span style={{ zIndex: 2, display: 'flex', alignItems: 'center', gap: '12px' }}>ENTER TERMINAL <ArrowRight size={24} /></span>
+          </button>
+          
+          <style>{`
+            .premium-btn::before {
+              content: '';
+              position: absolute;
+              top: 0; left: 0; width: 0%; height: 100%;
+              background: var(--primary);
+              transition: width 0.4s cubic-bezier(0.7, 0, 0.3, 1);
+              z-index: 1;
+            }
+            .premium-btn:hover::before {
+              width: 100%;
+            }
+            .premium-btn:hover span {
+              color: #0a0f1e;
+            }
+            .premium-btn {
+              box-shadow: 0 0 20px rgba(0, 212, 255, 0.2), inset 0 0 20px rgba(0, 212, 255, 0.1);
+            }
+            .premium-btn:hover {
+              box-shadow: 0 0 40px rgba(0, 212, 255, 0.6), inset 0 0 0 rgba(0, 212, 255, 0);
+              transform: translateY(-2px) scale(1.02);
+            }
+          `}</style>
+        </div>
+
+        {/* Feature Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px', marginTop: '100px', zIndex: 1, maxWidth: '1000px', width: '100%' }}>
+          {[
+            { icon: <Activity size={24} color="var(--success)" />, title: 'Real-Time Telemetry', desc: 'Live market data streaming directly into the analysis engine.' },
+            { icon: <Cpu size={24} color="#8b5cf6" />, title: '7-Agent Committee', desc: 'Specialized LLMs debating bull/bear cases simultaneously.' },
+            { icon: <Globe size={24} color="var(--warning)" />, title: 'Global Sentiment', desc: 'Real-time NLP scanning of news and insider transcripts.' }
+          ].map((feature, i) => (
+            <div key={i} style={{ padding: '32px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', textAlign: 'left', transition: 'all 0.3s' }}
+                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+                 onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}>
+              <div style={{ marginBottom: '16px' }}>{feature.icon}</div>
+              <h3 style={{ fontSize: '18px', fontFamily: 'var(--font-display)', fontWeight: 600, marginBottom: '12px', color: '#fff' }}>{feature.title}</h3>
+              <p style={{ fontSize: '14px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>{feature.desc}</p>
+            </div>
           ))}
         </div>
-      </div>
 
-      {/* Footer Branding */}
-      <div style={{ position: 'absolute', bottom: '40px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', opacity: 0.5, zIndex: 2 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Globe size={12} color="var(--primary)" />
-          <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', letterSpacing: '1px' }}>FINPILOT DECISION ENGINES VER 3.5.0</span>
-        </div>
-      </div>
+      </main>
     </div>
   );
 };

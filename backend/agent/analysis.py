@@ -8,7 +8,7 @@ import json, os
 from dotenv import load_dotenv
 load_dotenv()
 
-llm = ChatGroq(model="openai/gpt-oss-120b", api_key=os.getenv("GROQ_API_KEY"))
+llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API_KEY"))
 
 def convert_numpy(obj):
     if isinstance(obj, np.floating):
@@ -138,7 +138,8 @@ Given structured evidence, produce a final investment report as JSON:
   "sources": ["..."]
 }}
 signal_score = weighted average of RSI(0.3) + MACD(0.2) + sentiment(0.3) + fundamentals(0.2), scale 1-10.
-risk_score = from risk_scores.risk_score provided. Do NOT invent numbers."""),
+risk_score = from risk_scores.risk_score provided. Do NOT invent numbers.
+IMPORTANT: You will receive "gemini_vision_analysis" in the evidence. This is a visual chart reading by Gemini 1.5. You MUST mention this visual analysis in your pros/cons or resolution if it's significant."""),
     ("human", "Full evidence:\n{evidence}\nRisk scores:\n{risk}\nPortfolio fit:\n{portfolio}\nContradictions:\n{contradictions}\nBull Thesis:\n{bull_thesis}\nBear Thesis:\n{bear_thesis}")
 ])
 
