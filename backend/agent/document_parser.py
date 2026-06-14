@@ -103,37 +103,37 @@ class PDFParser:
                     source=src, metadata={"page": page_num, "source": src}
                 ))
 
-            # Image extraction
-            for img_idx, img_ref in enumerate(page.get_images(full=True)):
-                xref = img_ref[0]
-                try:
-                    base_img  = doc.extract_image(xref)
-                    img_bytes = base_img["image"]
-                    img       = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-
-                    # Skip tiny images (icons, decorations)
-                    if img.size[0] < self.cfg.min_image_size[0] or \
-                       img.size[1] < self.cfg.min_image_size[1]:
-                        continue
-
-                    # Save PNG to disk
-                    fname = f"{src}_p{page_num}_img{img_idx}.png"
-                    fpath = str(Path(self.cfg.image_dir) / fname)
-                    img.save(fpath, "PNG")
-
-                    # Base64 for API calls
-                    buf = io.BytesIO()
-                    img.save(buf, "PNG")
-                    b64 = base64.b64encode(buf.getvalue()).decode()
-
-                    cid = self._uid(f"{src}-p{page_num}-img{img_idx}")
-                    images.append(ImageChunk(
-                        image_b64=b64, image_path=fpath,
-                        page=page_num, chunk_id=cid, source=src,
-                        metadata={"page": page_num, "source": src, "img_idx": img_idx}
-                    ))
-                except Exception as e:
-                    log.warning(f"Image extraction failed xref={xref}: {e}")
+            # Image extraction disabled to prevent Groq API rate limits (429)
+            # for img_idx, img_ref in enumerate(page.get_images(full=True)):
+            #     xref = img_ref[0]
+            #     try:
+            #         base_img  = doc.extract_image(xref)
+            #         img_bytes = base_img["image"]
+            #         img       = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+            # 
+            #         # Skip tiny images (icons, decorations)
+            #         if img.size[0] < self.cfg.min_image_size[0] or \
+            #            img.size[1] < self.cfg.min_image_size[1]:
+            #             continue
+            # 
+            #         # Save PNG to disk
+            #         fname = f"{src}_p{page_num}_img{img_idx}.png"
+            #         fpath = str(Path(self.cfg.image_dir) / fname)
+            #         img.save(fpath, "PNG")
+            # 
+            #         # Base64 for API calls
+            #         buf = io.BytesIO()
+            #         img.save(buf, "PNG")
+            #         b64 = base64.b64encode(buf.getvalue()).decode()
+            # 
+            #         cid = self._uid(f"{src}-p{page_num}-img{img_idx}")
+            #         images.append(ImageChunk(
+            #             image_b64=b64, image_path=fpath,
+            #             page=page_num, chunk_id=cid, source=src,
+            #             metadata={"page": page_num, "source": src, "img_idx": img_idx}
+            #         ))
+            #     except Exception as e:
+            #         log.warning(f"Image extraction failed xref={xref}: {e}")
 
         doc.close()
         log.info(f"Extracted {len(texts)} text chunks, {len(images)} images from {src}")
@@ -354,18 +354,18 @@ class MultimodalRAG:
             t_embs = self.text_emb.embed([c.text for c in text_chunks])
             self.store.add_texts(text_chunks, t_embs)
 
-        # Caption + embed + store images
-        if image_chunks:
-            ctx = Path(pdf_path).stem.replace("_", " ")
-            log.info(f"Captioning {len(image_chunks)} images with LLaVA…")
-            for ic in image_chunks:
-                ic.caption = self.captioner.caption(ic.image_b64, context=ctx)
-                self._img_cache[ic.chunk_id] = ic.image_b64
-                log.info(f"  [{ic.chunk_id}] {ic.caption[:80]}…")
-
-            pil_imgs = [Image.open(ic.image_path).convert("RGB") for ic in image_chunks]
-            i_embs   = self.clip_emb.embed_images(pil_imgs)
-            self.store.add_images(image_chunks, i_embs)
+        # Caption + embed + store images (Disabled to prevent API rate limits)
+        # if image_chunks:
+        #     ctx = Path(pdf_path).stem.replace("_", " ")
+        #     log.info(f"Captioning {len(image_chunks)} images with LLaVA…")
+        #     for ic in image_chunks:
+        #         ic.caption = self.captioner.caption(ic.image_b64, context=ctx)
+        #         self._img_cache[ic.chunk_id] = ic.image_b64
+        #         log.info(f"  [{ic.chunk_id}] {ic.caption[:80]}…")
+        # 
+        #     pil_imgs = [Image.open(ic.image_path).convert("RGB") for ic in image_chunks]
+        #     i_embs   = self.clip_emb.embed_images(pil_imgs)
+        #     self.store.add_images(image_chunks, i_embs)
 
         stats = self.store.stats()
         log.info(f"Done. Store: {stats}")
@@ -487,7 +487,7 @@ async def parse_and_explain_document(file: UploadFile) -> str:
             rag.ingest(tmp_path)
             
             question = "Provide a detailed explanation of the key financial metrics, risks, and overall financial health. Structure your response with clear headings, bullet points, and highlight critical insights. Format your response in Markdown."
-            result = rag.query(question, include_images=True)
+            result = rag.query(question, include_images=False)
             return result['answer']
         finally:
             os.unlink(tmp_path)

@@ -18,6 +18,7 @@ from agent.intent_parser import resolve_ticker
 from agent.document_parser import parse_and_explain_document
 from utils.pdf_generator import generate_trade_statement
 from utils.email_service import send_statement_email
+import yfinance as yf
 
 load_dotenv()
 
@@ -71,7 +72,6 @@ class ExecuteTradeRequest(BaseModel):
     ticker: str
     amount: float
     user_email: str
-
 
 @app.get("/health")
 def health():
@@ -202,4 +202,58 @@ async def execute_trade(req: ExecuteTradeRequest):
         }
     except Exception as e:
         print(f"Error executing trade: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+def fetch_yfinance_data():
+    tickers = ["NVDA", "AAPL", "TSLA", "MSFT", "RELIANCE.NS", "TCS.NS"]
+    try:
+        # Fetch last 2 days to calculate change
+        data = yf.download(tickers, period="5d", group_by="ticker", auto_adjust=False, threads=True)
+        results = []
+        for t in tickers:
+            try:
+                # Get the specific dataframe for this ticker
+                df = data[t] if len(tickers) > 1 else data
+                df = df.dropna()
+                if len(df) >= 2:
+                    current_price = float(df['Close'].iloc[-1])
+                    prev_price = float(df['Close'].iloc[-2])
+                    change_pct = ((current_price - prev_price) / prev_price) * 100
+                    results.append({
+                        "ticker": t,
+                        "price": current_price,
+                        "change": round(change_pct, 2)
+                    })
+                else:
+                    results.append({"ticker": t, "price": 0, "change": 0})
+            except Exception as e:
+                print(f"Error parsing ticker {t}: {e}")
+                results.append({"ticker": t, "price": 0, "change": 0})
+        return results
+    except Exception as e:
+        print(f"yfinance download failed: {e}")
+        return []
+
+@app.get("/dashboard_data")
+async def dashboard_data():
+    try:
+        live_data = await asyncio.to_thread(fetch_yfinance_data)
+        
+        # Calculate mock portfolio stats based on the live data's average change
+        avg_change = sum(item["change"] for item in live_data if item["change"] != 0) / len(live_data) if live_data else 0.5
+        total_value = 1250000 * (1 + (avg_change / 100))
+        day_pl = total_value - 1250000
+        
+        return {
+            "status": "success",
+            "portfolio": {
+                "total_value": total_value,
+                "day_pl": day_pl,
+                "risk_score": 6.4,
+                "sharpe": 1.85,
+                "beta": 1.12
+            },
+            "watchlist": live_data
+        }
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

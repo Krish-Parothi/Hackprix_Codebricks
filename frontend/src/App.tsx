@@ -12,6 +12,7 @@ import { BoardroomScreen } from './components/BoardroomScreen';
 import { VerdictReveal } from './components/VerdictReveal';
 import { LoginScreen } from './components/LoginScreen';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import FloatingChatAssistant from './components/FloatingChatAssistant';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
@@ -112,6 +113,7 @@ function App() {
   return (
     <AuthProvider>
       <AppRoutes />
+      <FloatingChatAssistant />
     </AuthProvider>
   );
 }
