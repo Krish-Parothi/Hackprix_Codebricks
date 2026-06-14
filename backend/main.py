@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
@@ -14,6 +15,7 @@ from agent.market import market_agent_node
 from agent.technical import technical_agent_node
 from agent.news import news_agent_node
 from agent.intent_parser import resolve_ticker
+from agent.document_parser import parse_and_explain_document
 
 load_dotenv()
 
@@ -30,6 +32,14 @@ async def lifespan(app: FastAPI):
     task.cancel()
 
 app = FastAPI(title="FinAgentX 2.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 _threads: dict = {}
 
@@ -162,3 +172,11 @@ def get_news(ticker: str):
     state = {"ticker": resolved_ticker}
     news_res = news_agent_node(state)
     return {"news_data": news_res.get("news_data")}
+
+@app.post("/analyze/document")
+async def analyze_document(file: UploadFile = File(...)):
+    try:
+        explanation = await parse_and_explain_document(file)
+        return {"status": "success", "explanation": explanation}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

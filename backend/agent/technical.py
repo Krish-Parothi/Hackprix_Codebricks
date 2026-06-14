@@ -1,6 +1,5 @@
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
 from graphs.state import AgentState
 from datetime import datetime
 from dotenv import load_dotenv
@@ -20,10 +19,23 @@ def technical_agent_node(state: AgentState) -> AgentState:
     ticker = state["ticker"]
     try:
         df = yf.Ticker(ticker).history(period="6mo")
-        df.ta.rsi(append=True)
-        df.ta.macd(append=True)
-        df.ta.sma(length=50, append=True)
-        df.ta.sma(length=200, append=True)
+        
+        # Calculate RSI
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        df['RSI_14'] = 100 - (100 / (1 + rs))
+
+        # Calculate MACD
+        exp1 = df['Close'].ewm(span=12, adjust=False).mean()
+        exp2 = df['Close'].ewm(span=26, adjust=False).mean()
+        df['MACD_12_26_9'] = exp1 - exp2
+        df['MACDs_12_26_9'] = df['MACD_12_26_9'].ewm(span=9, adjust=False).mean()
+
+        # Calculate SMA
+        df['SMA_50'] = df['Close'].rolling(window=50).mean()
+        df['SMA_200'] = df['Close'].rolling(window=200).mean()
 
         latest = df.iloc[-1]
         rsi = latest.get("RSI_14")
