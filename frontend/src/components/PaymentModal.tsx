@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { X, QrCode, CheckCircle, Mail, AlertTriangle, Loader2 } from 'lucide-react';
-import QRCode from 'react-qr-code';
 import { useAuth } from '../contexts/AuthContext';
 
 interface PaymentModalProps {
@@ -31,9 +30,6 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Fake UPI payload
-  const upiPayload = `upi://pay?pa=finagentx@oksbi&pn=FinAgentX&am=${amountToInvest.toFixed(2)}&cu=INR&tn=Trade%20${ticker}`;
-
   const handleSimulatePayment = async () => {
     if (!email || !email.includes('@')) {
       alert("Please enter a valid email address to receive your PDF statement.");
@@ -42,6 +38,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
     setIsProcessing(true);
     try {
+      // Fake bank verification delay
+      await new Promise(r => setTimeout(r, 3000));
+
       // Simulate backend call
       const res = await fetch('/api/execute_trade', {
         method: 'POST',
@@ -93,18 +92,19 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         </button>
 
         <h3 style={{ fontSize: '18px', color: '#fff', fontFamily: 'var(--font-mono)', marginBottom: '8px', textAlign: 'center' }}>
-          EXECUTE TRADE
+          SECURE CHECKOUT
         </h3>
         <p style={{ fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'center', marginBottom: '24px' }}>
           Scan the QR code to finalize your investment of <strong style={{color:'var(--primary)'}}>₹{amountToInvest.toFixed(2)}</strong> in <strong style={{color:'#fff'}}>{ticker}</strong>
         </p>
 
-        {/* QR Code Container */}
+        {/* Custom QR Code Container */}
         <div style={{
-          background: '#fff', padding: '16px', borderRadius: '12px',
-          marginBottom: '24px', boxShadow: '0 0 20px rgba(255,255,255,0.1)'
+          background: '#fff', padding: '8px', borderRadius: '12px',
+          marginBottom: '24px', boxShadow: '0 0 20px rgba(255,255,255,0.1)',
+          display: 'flex', justifyContent: 'center', alignItems: 'center'
         }}>
-          <QRCode value={upiPayload} size={180} />
+          <img src="/QR.jpeg" alt="Payment QR" style={{ width: '180px', height: '180px', objectFit: 'contain' }} />
         </div>
 
         {/* Email Input / Display */}
@@ -142,7 +142,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', opacity: (isProcessing || !email) ? 0.5 : 1 }}
           >
             {isProcessing ? <Loader2 size={18} className="spin" /> : <QrCode size={18} />}
-            {isProcessing ? 'PROCESSING...' : 'SIMULATE PAYMENT'}
+            {isProcessing ? 'VERIFYING BANK PAYMENT...' : 'I HAVE SCANNED & PAID'}
           </button>
         )}
 
@@ -156,7 +156,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         {paymentStatus === 'error' && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: 'var(--danger)' }}>
             <AlertTriangle size={32} />
-            <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)' }}>ERROR PROCESSING PAYMENT</span>
+            <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)' }}>ERROR VERIFYING PAYMENT</span>
             <button onClick={() => setPaymentStatus('pending')} style={{ background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)', padding: '4px 12px', borderRadius: '4px', fontSize: '10px', marginTop: '8px', cursor: 'pointer' }}>TRY AGAIN</button>
           </div>
         )}

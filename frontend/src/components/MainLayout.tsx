@@ -62,9 +62,6 @@ export const MainLayout: React.FC = () => {
           <NavLink to="/portfolio" className={({ isActive }) => `navbar-link ${isActive ? 'active' : ''}`}>
             <PieChart size={16} /> Portfolio
           </NavLink>
-          <NavLink to="/watchlist" className={({ isActive }) => `navbar-link ${isActive ? 'active' : ''}`}>
-            <Activity size={16} /> Watchlist
-          </NavLink>
           <NavLink to="/history" className={({ isActive }) => `navbar-link ${isActive ? 'active' : ''}`}>
             <Clock size={16} /> Reports
           </NavLink>
