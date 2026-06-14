@@ -256,4 +256,104 @@ async def dashboard_data():
             "watchlist": live_data
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- Gemini Chatbot Integration ---
+import os
+from pydantic import BaseModel
+
+class AskRequestAPI(BaseModel):
+    query: str
+
+@app.post("/ask")
+async def ask_bot(req: AskRequestAPI):
+    query = req.query
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return {"reply": "Gemini API Key is missing from the environment."}
+    
+    try:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+        from langchain_core.tools import tool
+
+        @tool
+        def fetch_market_data(ticker: str) -> str:
+            """Fetch market data including price, PE ratio, volume, and earnings for a ticker. Use this when the user asks about a stock's market data or price."""
+            try:
+                resolved = resolve_ticker(ticker)
+                res = market_agent_node({"ticker": resolved})
+                return str(res.get("market_data", {}))
+            except Exception as e:
+                return str(e)
+
+        @tool
+        def fetch_news_data(ticker: str) -> str:
+            """Fetch recent news articles and sentiment for a ticker. Use this when the user asks for news about a stock."""
+            try:
+                resolved = resolve_ticker(ticker)
+                res = news_agent_node({"ticker": resolved})
+                return str(res.get("news_data", {}))
+            except Exception as e:
+                return str(e)
+
+        @tool
+        def fetch_technical_data(ticker: str) -> str:
+            """Fetch technical data including RSI, MACD, and SMA for a ticker. Use this when the user asks for technical indicators of a stock."""
+            try:
+                resolved = resolve_ticker(ticker)
+                res = technical_agent_node({"ticker": resolved})
+                return str(res.get("technical_data", {}))
+            except Exception as e:
+                return str(e)
+
+        @tool
+        async def translate_regional_language(text: str) -> str:
+            """Uses Sarvam AI to translate Indian regional language to English. Use this if the user provides text in Hindi or other regional languages."""
+            try:
+                return await translate_to_english_sarvam(text)
+            except Exception as e:
+                return str(e)
+
+        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", api_key=api_key, temperature=0.7)
+        tools = [fetch_market_data, fetch_news_data, fetch_technical_data, translate_regional_language]
+        llm_with_tools = llm.bind_tools(tools)
+        
+        messages = [
+            SystemMessage(content="You are FinPilot AI, a financial assistant. Use tools to fetch market data, technical data, or news when asked about specific stocks or market conditions. If the user speaks in a regional language, translate it first. Summarize the tool outputs clearly for the user. Be conversational and concise. Do NOT use markdown in your final response."),
+            HumanMessage(content=query)
+        ]
+        
+        response = await llm_with_tools.ainvoke(messages)
+        
+        while response.tool_calls:
+            messages.append(response)
+            for tool_call in response.tool_calls:
+                tool_name = tool_call["name"]
+                tool_args = tool_call["args"]
+                
+                tool_result = ""
+                if tool_name == "fetch_market_data":
+                    tool_result = fetch_market_data.invoke(tool_args)
+                elif tool_name == "fetch_news_data":
+                    tool_result = fetch_news_data.invoke(tool_args)
+                elif tool_name == "fetch_technical_data":
+                    tool_result = fetch_technical_data.invoke(tool_args)
+                elif tool_name == "translate_regional_language":
+                    tool_result = await translate_regional_language.ainvoke(tool_args)
+                
+                messages.append(ToolMessage(content=str(tool_result), tool_call_id=tool_call["id"]))
+            
+            response = await llm_with_tools.ainvoke(messages)
+            
+        final_reply = response.content
+        if isinstance(final_reply, list):
+            text_parts = [str(p.get("text", "")) for p in final_reply if isinstance(p, dict) and "text" in p]
+            final_reply = " ".join(text_parts) if text_parts else str(final_reply)
+        elif not isinstance(final_reply, str):
+            final_reply = str(final_reply)
+            
+        return {"reply": final_reply}
+    except Exception as e:
+        print(f"Error in /ask endpoint: {e}")
+        return {"reply": "Sorry, I'm having trouble processing that right now. Please check my brain connection."}
