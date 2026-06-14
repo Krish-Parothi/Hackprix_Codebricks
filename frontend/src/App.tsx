@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Routes, Route, useSearchParams, useNavigate } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Routes, Route, useSearchParams, useNavigate, Navigate } from 'react-router-dom';
 import { MainLayout } from './components/MainLayout';
 import { LandingScreen } from './components/LandingScreen';
 import { ConnectScreen } from './components/ConnectScreen';
@@ -10,6 +10,27 @@ import { HistoryScreen } from './components/HistoryScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { BoardroomScreen } from './components/BoardroomScreen';
 import { VerdictReveal } from './components/VerdictReveal';
+import { LoginScreen } from './components/LoginScreen';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#0a0f1e', color: '#00d4ff' }}>
+        <div className="loader" style={{ width: '40px', height: '40px', border: '3px solid rgba(0,212,255,0.3)', borderTopColor: '#00d4ff', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+  
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  return children;
+};
 
 const AnalyzeRoute = () => {
   const [searchParams] = useSearchParams();
@@ -61,16 +82,21 @@ const AnalyzeRoute = () => {
   );
 };
 
-function App() {
+function AppRoutes() {
   const navigate = useNavigate();
   return (
     <Routes>
-      {/* Landing page has no navbar */}
-      <Route path="/" element={<LandingScreen onAnalyze={(ticker) => navigate(`/analyze?q=${encodeURIComponent(ticker)}`)} />} />
+      {/* Public routes */}
+      <Route path="/" element={<LandingScreen />} />
+      <Route path="/login" element={<LoginScreen />} />
       <Route path="/connect" element={<ConnectScreen onAnalyze={(ticker) => navigate(`/analyze?q=${encodeURIComponent(ticker)}`)} />} />
       
-      {/* Dashboard pages have the Top Navbar */}
-      <Route element={<MainLayout />}>
+      {/* Protected Dashboard pages */}
+      <Route element={
+        <ProtectedRoute>
+          <MainLayout />
+        </ProtectedRoute>
+      }>
         <Route path="/dashboard" element={<DashboardScreen />} />
         <Route path="/analyze" element={<AnalyzeRoute />} />
         <Route path="/portfolio" element={<PortfolioScreen />} />
@@ -79,6 +105,14 @@ function App() {
         <Route path="/settings" element={<SettingsScreen />} />
       </Route>
     </Routes>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
   );
 }
 

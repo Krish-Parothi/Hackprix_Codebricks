@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ShieldCheck, Download, Users, FileText, CheckCircle, RefreshCw, AlertTriangle } from 'lucide-react';
+import { PaymentModal } from './PaymentModal';
 
 interface VerdictRevealProps {
   isActive: boolean;
@@ -25,6 +26,7 @@ export const VerdictReveal: React.FC<VerdictRevealProps> = ({
   const [animateProgress, setAnimateProgress] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [showPayment, setShowPayment] = useState(false);
 
   useEffect(() => {
     if (isActive) {
@@ -118,6 +120,12 @@ Generated securely by FinPilot AI Boardroom.
       console.error("No thread ID to approve");
       return;
     }
+    
+    if (action === 'approve') {
+      setShowPayment(true);
+      return;
+    }
+
     setIsProcessing(true);
     try {
       await fetch('/api/approve', {
@@ -129,12 +137,31 @@ Generated securely by FinPilot AI Boardroom.
           user_id: 'demo_user'
         })
       });
-      // Allow them to restart after action is submitted
       onRestart();
     } catch (err) {
-      console.error("Failed to approve", err);
+      console.error("Failed to reject", err);
     }
     setIsProcessing(false);
+  };
+  
+  const handlePaymentSuccess = async () => {
+    setShowPayment(false);
+    if (threadId) {
+      try {
+        await fetch('/api/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            thread_id: threadId,
+            action: 'approve',
+            user_id: 'demo_user'
+          })
+        });
+      } catch (e) {
+        console.error("Failed to approve graph state", e);
+      }
+    }
+    onRestart();
   };
 
   return (
@@ -349,6 +376,14 @@ Generated securely by FinPilot AI Boardroom.
           </button>
         </div>
       </div>
+      
+      <PaymentModal 
+        isOpen={showPayment} 
+        ticker={ticker} 
+        amountToInvest={1.00} 
+        onClose={() => setShowPayment(false)} 
+        onPaymentSuccess={handlePaymentSuccess} 
+      />
     </div>
   );
 };

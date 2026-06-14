@@ -16,6 +16,8 @@ from agent.technical import technical_agent_node
 from agent.news import news_agent_node
 from agent.intent_parser import resolve_ticker
 from agent.document_parser import parse_and_explain_document
+from utils.pdf_generator import generate_trade_statement
+from utils.email_service import send_statement_email
 
 load_dotenv()
 
@@ -64,6 +66,11 @@ class VoiceRequest(BaseModel):
 
 class TranslationRequest(BaseModel):
     text: str
+
+class ExecuteTradeRequest(BaseModel):
+    ticker: str
+    amount: float
+    user_email: str
 
 
 @app.get("/health")
@@ -179,4 +186,20 @@ async def analyze_document(file: UploadFile = File(...)):
         explanation = await parse_and_explain_document(file)
         return {"status": "success", "explanation": explanation}
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/execute_trade")
+async def execute_trade(req: ExecuteTradeRequest):
+    try:
+        pdf_path = generate_trade_statement(req.ticker, req.amount, req.user_email)
+        email_result = send_statement_email(req.user_email, req.ticker, pdf_path)
+        
+        return {
+            "status": "success",
+            "message": "Trade executed successfully.",
+            "email_status": email_result,
+            "pdf_generated": True
+        }
+    except Exception as e:
+        print(f"Error executing trade: {e}")
         raise HTTPException(status_code=500, detail=str(e))

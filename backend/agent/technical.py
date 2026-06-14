@@ -5,6 +5,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import io
 import os
+import math
 import matplotlib
 matplotlib.use('Agg')
 import mplfinance as mpf
@@ -15,11 +16,26 @@ from langchain_core.prompts import ChatPromptTemplate
 import json
 
 load_dotenv()
+
+def clean_nan(obj):
+    """Recursively replace NaN/Inf floats with None for JSON safety."""
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+    elif isinstance(obj, dict):
+        return {k: clean_nan(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_nan(v) for v in obj]
+    return obj
+
 def technical_agent_node(state: AgentState) -> AgentState:
     ticker = state["ticker"]
     try:
         df = yf.Ticker(ticker).history(period="6mo")
         
+        if df.empty:
+            raise ValueError(f"No price data found for {ticker}")
+
         # Calculate RSI
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -49,20 +65,21 @@ def technical_agent_node(state: AgentState) -> AgentState:
         resistance = df["High"].tail(20).max()
 
         rsi_signal = (
+            "neutral" if math.isnan(rsi) else
             "oversold" if rsi < 30 else
             "overbought" if rsi > 70 else "neutral"
         )
-        macd_signal_str = "bullish" if (macd and macd_signal and macd > macd_signal) else "bearish"
-        trend = "uptrend" if (sma50 and sma200 and sma50 > sma200) else "downtrend"
+        macd_signal_str = "neutral" if math.isnan(macd) or math.isnan(macd_signal) else ("bullish" if macd > macd_signal else "bearish")
+        trend = "neutral" if math.isnan(sma50) or math.isnan(sma200) else ("uptrend" if sma50 > sma200 else "downtrend")
 
         # Generate Chart and use Gemini Vision
         gemini_vision_analysis = "Vision analysis skipped (No API Key)"
         try:
             buf = io.BytesIO()
             ap = []
-            if sma50:
+            if not df['SMA_50'].dropna().empty:
                 ap.append(mpf.make_addplot(df['SMA_50'], color='blue'))
-            if sma200:
+            if not df['SMA_200'].dropna().empty:
                 ap.append(mpf.make_addplot(df['SMA_200'], color='red'))
             
             mpf.plot(df, type='candle', addplot=ap if ap else None, volume=True, style='yahoo', savefig=buf)
@@ -89,18 +106,20 @@ def technical_agent_node(state: AgentState) -> AgentState:
 
         technical_data = {
             "gemini_vision_analysis": gemini_vision_analysis,
-            "rsi": float(round(rsi, 2)) if rsi else None,
+            "rsi": float(round(rsi, 2)) if pd.notna(rsi) else None,
             "rsi_signal": rsi_signal,
-            "macd": float(round(macd, 4)) if macd else None,
+            "macd": float(round(macd, 4)) if pd.notna(macd) else None,
             "macd_signal": macd_signal_str,
-            "sma50": float(round(sma50, 2)) if sma50 else None,
-            "sma200": float(round(sma200, 2)) if sma200 else None,
+            "sma50": float(round(sma50, 2)) if pd.notna(sma50) else None,
+            "sma200": float(round(sma200, 2)) if pd.notna(sma200) else None,
             "trend": trend,
-            "support": float(round(support, 2)),
-            "resistance": float(round(resistance, 2)),
+            "support": float(round(support, 2)) if pd.notna(support) else None,
+            "resistance": float(round(resistance, 2)) if pd.notna(resistance) else None,
             "fetched_at": datetime.utcnow().isoformat(),
         }
         
+        technical_data = clean_nan(technical_data)
+
         try:
             llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API_KEY"))
             prompt = ChatPromptTemplate.from_messages([
@@ -114,4 +133,4 @@ def technical_agent_node(state: AgentState) -> AgentState:
     except Exception as e:
         technical_data = {"error": str(e)}
 
-    return {"technical_data": technical_data}
+    return {"technical_data": clean_nan(technical_data)}

@@ -85,7 +85,7 @@ export const PortfolioScreen: React.FC = () => {
                   ))}
                 </Pie>
                 <Tooltip 
-                  formatter={(value: number) => `₹${value.toLocaleString()}`}
+                  formatter={(value: any) => `₹${value.toLocaleString()}`}
                   contentStyle={{ background: 'rgba(8,12,28,0.9)', border: '1px solid var(--primary)', borderRadius: '8px' }}
                   itemStyle={{ color: '#fff' }}
                 />

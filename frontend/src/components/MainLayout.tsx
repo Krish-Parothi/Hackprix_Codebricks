@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Presentation, PieChart, Activity, Clock, Settings, Shield, User } from 'lucide-react';
+import { LayoutDashboard, Presentation, PieChart, Activity, Clock, Settings, Shield, User, LogOut } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 export const MainLayout: React.FC = () => {
   const [showDoors, setShowDoors] = useState(true);
+  const { user, signOut } = useAuth();
 
   useEffect(() => {
     const timer = setTimeout(() => setShowDoors(false), 2000);
@@ -77,10 +79,23 @@ export const MainLayout: React.FC = () => {
             STATUS: <span style={{ color: 'var(--success)' }}>ONLINE</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '13px', fontWeight: 600 }}>Demo User</span>
-            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <User size={16} color="#fff" />
+            <span style={{ fontSize: '13px', fontWeight: 600 }}>{user?.user_metadata?.full_name || 'Terminal User'}</span>
+            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+              {user?.user_metadata?.avatar_url ? (
+                <img src={user.user_metadata.avatar_url} alt="User" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <User size={16} color="#fff" />
+              )}
             </div>
+            <button 
+              onClick={signOut}
+              title="Logout"
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px', color: 'var(--danger)', marginLeft: '8px', transition: 'transform 0.2s' }}
+              onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
+              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              <LogOut size={18} />
+            </button>
           </div>
         </div>
       </header>
