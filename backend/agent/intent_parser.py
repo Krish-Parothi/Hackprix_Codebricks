@@ -149,7 +149,7 @@ import yfinance as yf
 from dotenv import load_dotenv
 load_dotenv()
 
-llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API_KEY"))
+llm = ChatGroq(model="openai/gpt-oss-120b", api_key=os.getenv("GROQ_API_KEY"))
 
 PROMPT = ChatPromptTemplate.from_messages([
     ("system", """You are a financial intent parser. Extract the stock ticker and investment details from the user message.

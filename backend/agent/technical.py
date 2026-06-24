@@ -121,7 +121,7 @@ def technical_agent_node(state: AgentState) -> AgentState:
         technical_data = clean_nan(technical_data)
 
         try:
-            llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API_KEY"))
+            llm = ChatGroq(model="openai/gpt-oss-120b", api_key=os.getenv("GROQ_API_KEY"))
             prompt = ChatPromptTemplate.from_messages([
                 ("system", "You are the Technical Analyst AI. Summarize this technical data (RSI, trend, MACD, and vision analysis) into 2 natural, conversational sentences as if you are speaking in a boardroom. Do not use markdown or greetings."),
                 ("human", "{data}")
